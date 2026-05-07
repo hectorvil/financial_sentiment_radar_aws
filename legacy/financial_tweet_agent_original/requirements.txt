@@ -1,0 +1,25 @@
+# ——— CUDA 12.1 wheels (Colab, GCP A100/L4, etc.) ——————————————
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.3.1+cu121
+torchvision==0.18.1+cu121
+
+# ——— NLP stack ————————————————————————————————————————————————
+transformers==4.39.3          # GPT-4o, FinBERT, MiniLM
+sentence-transformers==2.7.0   # wrapper con pooling
+openai>=1.23                   # cliente oficial >1.x
+httpx<0.27                     # pin requerido por openai ≤1.27
+
+# ——— Vector DB ———————————————————————————————————————————————
+chromadb==0.4.24               # backend HNSW
+pydantic<2,>=1.10              # compat 0.4.x
+
+# ——— Dashboard / App ————————————————————————————————
+streamlit==1.33.0
+plotly==5.22.0
+pyarrow==13.0.0                # lee Parquet 1.x
+python-dotenv>=1.0             # variables secretas
+
+# ——— Data / utils ————————————————————————————————
+numpy<2                        # evita np.float_ removal
+typing_extensions>=4.7
+emoji==2.11.1

@@ -1,0 +1,49 @@
+[project]
+name = "financial-sentiment-radar"
+version = "0.1.0"
+description = "AWS data product for financial social-media sentiment analytics and Streamlit queries"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.34.0",
+    "pandas>=2.2.0",
+    "plotly>=5.22.0",
+    "pyarrow>=15.0.0",
+    "python-dotenv>=1.0.1",
+    "requests>=2.32.0",
+    "scikit-learn>=1.4.0",
+    "streamlit>=1.35.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.6.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [
+    "legacy",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
+    "build",
+    "dist",
+    "config/generated.env",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "N"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"legacy/**" = ["ALL"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

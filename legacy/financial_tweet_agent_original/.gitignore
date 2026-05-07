@@ -1,0 +1,27 @@
+# 🔒 Claves y variables de entorno
+.env
+*.env
+
+# 🧪 Python caches y artefactos
+__pycache__/
+*.py[cod]
+*.pkl
+*.joblib
+
+# 🐍 Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# ⚙️ ChromaDB (vector store local)
+chroma_db/
+
+# 💾 Archivos temporales
+.DS_Store
+.ipynb_checkpoints
+*.log
+
+# 📦 Archivos de sistema o IDEs
+.idea/
+.vscode/

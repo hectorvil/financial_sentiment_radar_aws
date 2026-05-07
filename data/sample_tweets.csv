@@ -1,0 +1,13 @@
+tweet_id,created_at,author,text,source
+s001,2026-04-28T14:02:00Z,analyst_1,"$NVDA rallies after strong AI chip demand and record data center revenue. Bullish tone from analysts.",sample
+s002,2026-04-28T15:15:00Z,analyst_2,"Tesla $TSLA faces volatility as margins decline and investors fear weaker EV demand.",sample
+s003,2026-04-29T10:01:00Z,macrodesk,"Fed rates remain a risk for growth stocks like MSFT and AMZN; market sentiment is neutral ahead of CPI.",sample
+s004,2026-04-29T12:20:00Z,fin_news,"BBVA app complaints increase today, but the bank reports strong digital adoption in Mexico.",sample
+s005,2026-04-30T09:45:00Z,tech_trader,"Apple $AAPL upgrade: services growth offsets slower iPhone cycle. Investors see upside.",sample
+s006,2026-04-30T16:30:00Z,market_watch,"Amazon $AMZN cloud AWS growth beats expectations while retail margins stay under pressure.",sample
+s007,2026-05-01T13:05:00Z,banking_feed,"JPMorgan $JPM warns about credit risk but posts resilient profits and higher net interest income.",sample
+s008,2026-05-01T17:40:00Z,spanish_market,"NVIDIA NVDA sube por la demanda de GPU e inteligencia artificial; tono positivo en el mercado.",sample
+s009,2026-05-02T11:12:00Z,spanish_market,"Tesla cae por dudas sobre márgenes y riesgo de menor demanda. El sentimiento se ve negativo.",sample
+s010,2026-05-02T18:03:00Z,macrodesk,"Google GOOGL invests in AI infrastructure. Some analysts like growth, others warn about capex risk.",sample
+s011,2026-05-03T09:55:00Z,fin_news,"BBVA enfrenta quejas por su app, aunque no se reporta fraude ni pérdida material para usuarios.",sample
+s012,2026-05-03T20:10:00Z,analyst_3,"Microsoft $MSFT Azure demand remains strong; AI copilots could support revenue growth.",sample
