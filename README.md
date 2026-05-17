@@ -527,3 +527,58 @@ Este MVP no es recomendación financiera. Es un radar de percepción basado en t
 ```bash
 ./scripts/08_smoke_test_cloud.sh
 ```
+
+---
+
+## 12. Extensión FinBERT + Bedrock schema inference
+
+Esta versión incluye una extensión opcional para usar una arquitectura analítica híbrida:
+
+- `SENTIMENT_MODEL=lexicon`: clasificador financiero ligero, barato e interpretable. Es el modo default.
+- `SENTIMENT_MODEL=finbert`: clasificador transformer FinBERT para sentimiento financiero tweet por tweet.
+- `USE_BEDROCK=true`: Bedrock responde preguntas del usuario usando evidencia recuperada.
+- `USE_BEDROCK_SCHEMA=true`: Bedrock ayuda a identificar la columna de texto cuando un CSV/Parquet tiene esquema ambiguo.
+
+La guía completa está en:
+
+```text
+docs/README_FINBERT_BEDROCK_IMPLEMENTACION.md
+```
+
+Ejecutar local en modo default:
+
+```bash
+uv sync --all-groups
+PYTHONPATH=src uv run pytest -q
+export SENTIMENT_MODEL=lexicon
+PYTHONPATH=src uv run streamlit run app/streamlit_app.py
+```
+
+Ejecutar local con FinBERT:
+
+```bash
+export SENTIMENT_MODEL=finbert
+export FINBERT_MODEL_NAME=ProsusAI/finbert
+export FINBERT_BATCH_SIZE=16
+PYTHONPATH=src uv run streamlit run app/streamlit_app.py
+```
+
+Desplegar en AWS con FinBERT + Bedrock:
+
+```bash
+export SENTIMENT_MODEL=finbert
+export FINBERT_MODEL_NAME=ProsusAI/finbert
+export FINBERT_BATCH_SIZE=16
+export USE_BEDROCK=true
+export USE_BEDROCK_SCHEMA=true
+export BEDROCK_MODEL_ID=amazon.titan-text-lite-v1
+export TASK_CPU=1024
+export TASK_MEMORY=4096
+
+source config/generated.env
+./scripts/06_build_push_app.sh
+./scripts/07_deploy_ecs.sh
+./scripts/09_print_outputs.sh
+```
+
+FinBERT aumenta el tamaño de la imagen y el consumo de memoria. Para mantener costo bajo, el modo léxico sigue siendo el default.

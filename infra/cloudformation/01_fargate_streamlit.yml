@@ -36,6 +36,22 @@ Parameters:
   BedrockModelId:
     Type: String
     Default: "amazon.titan-text-lite-v1"
+  UseBedrockSchema:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  SentimentModel:
+    Type: String
+    Default: "lexicon"
+    AllowedValues: ["lexicon", "finbert"]
+  FinbertModelName:
+    Type: String
+    Default: "ProsusAI/finbert"
+  FinbertBatchSize:
+    Type: Number
+    Default: 16
+    MinValue: 1
+    MaxValue: 128
   TwitterBearerSecretArn:
     Type: String
     Default: ""
@@ -293,6 +309,14 @@ Resources:
               Value: !Ref UseBedrock
             - Name: BEDROCK_MODEL_ID
               Value: !Ref BedrockModelId
+            - Name: USE_BEDROCK_SCHEMA
+              Value: !Ref UseBedrockSchema
+            - Name: SENTIMENT_MODEL
+              Value: !Ref SentimentModel
+            - Name: FINBERT_MODEL_NAME
+              Value: !Ref FinbertModelName
+            - Name: FINBERT_BATCH_SIZE
+              Value: !Ref FinbertBatchSize
             - Name: LOG_LEVEL
               Value: INFO
           Secrets:

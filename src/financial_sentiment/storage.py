@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 from pathlib import Path
 from typing import Literal
@@ -43,6 +44,15 @@ class LocalStorage:
         logger.info("write_local path=%s rows=%s", path, len(df))
         return path
 
+    def write_json(self, payload: dict, relative_path: str) -> Path:
+        """Write a JSON object under the local storage root."""
+
+        path = self.root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info("write_local_json path=%s", path)
+        return path
+
 
 class S3Storage:
     """Read and write dataframes in S3."""
@@ -75,6 +85,19 @@ class S3Storage:
             Bucket=self.bucket, Key=key, Body=buffer.read(), ContentType=content_type
         )
         logger.info("write_s3 bucket=%s key=%s rows=%s", self.bucket, key, len(df))
+        return f"s3://{self.bucket}/{key}"
+
+    def write_json(self, payload: dict, key: str) -> str:
+        """Write a JSON object to S3."""
+
+        body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=key,
+            Body=body,
+            ContentType="application/json",
+        )
+        logger.info("write_s3_json bucket=%s key=%s", self.bucket, key)
         return f"s3://{self.bucket}/{key}"
 
     def exists(self, key: str) -> bool:
