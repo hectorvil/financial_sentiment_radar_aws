@@ -17,6 +17,7 @@ aws ecr get-login-password --region "${AWS_REGION}" \
 # Fargate expects linux/amd64. On Mac, a plain docker build can create an
 # incompatible arm64 image.
 docker buildx build \
+  --no-cache \
   --platform linux/amd64 \
   --build-arg PRELOAD_FINBERT="${PRELOAD_FINBERT}" \
   --build-arg FINBERT_MODEL_NAME="${FINBERT_MODEL_NAME}" \
