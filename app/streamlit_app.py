@@ -29,10 +29,12 @@ from financial_sentiment.charts import (
 from financial_sentiment.config import AppConfig
 from financial_sentiment.io_helpers import read_uploaded_dataframe
 from financial_sentiment.logging_utils import configure_logging
+from financial_sentiment.medallion import write_medallion_datasets
 from financial_sentiment.pipeline import process_tweets
 from financial_sentiment.retrieval import TweetRetriever, build_extractive_answer
 from financial_sentiment.schema_inference import infer_schema
 from financial_sentiment.storage import LocalStorage, S3Storage
+from financial_sentiment.streamlit_live_tab import show_live_tweets
 from financial_sentiment.twitter_live import fetch_recent_tweets
 
 configure_logging()
@@ -312,6 +314,24 @@ def render_upload_controls(config: AppConfig) -> None:
 
             processed_location = persist_processed_upload(config, processed, uploaded.name)
 
+            if config.s3_bucket:
+                try:
+                    write_medallion_datasets(
+                        processed,
+                        bucket=config.s3_bucket,
+                        region_name=config.aws_region,
+                        source="manual_upload",
+                        raw_s3_uri=raw_location,
+                    )
+                except Exception as exc:
+                    logger.exception(
+                        "manual_upload_medallion_write_failed error_type=%s", type(exc).__name__
+                    )
+                    st.sidebar.warning(
+                        "El archivo se procesó, pero no pude escribir silver/gold para Athena. "
+                        f"Detalle: {type(exc).__name__}"
+                    )
+
             if add_to_default_batch:
                 current_default = st.session_state.get("default_df", pd.DataFrame())
                 updated_default = merge_with_default(current_default, processed)
@@ -569,8 +589,8 @@ def main() -> None:
     st.caption(f"Fuente actual: {st.session_state.get('data_source', 'dataset en memoria')}")
     st.caption(f"Modo activo: {st.session_state.get('active_mode', 'default_batch')}")
 
-    tab_overview, tab_questions, tab_topics, tab_data = st.tabs(
-        ["Resumen", "Consultas", "Temas/Riesgo", "Datos procesados"]
+    tab_overview, tab_questions, tab_topics, tab_live, tab_data = st.tabs(
+        ["Resumen", "Consultas", "Temas/Riesgo", "Tweets live", "Datos procesados"]
     )
 
     with tab_overview:
@@ -581,6 +601,9 @@ def main() -> None:
 
     with tab_topics:
         show_topics(df)
+
+    with tab_live:
+        show_live_tweets(config)
 
     with tab_data:
         show_data_table(df)
