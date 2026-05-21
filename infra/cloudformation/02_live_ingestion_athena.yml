@@ -1,0 +1,351 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Scheduled X/Twitter live ingestion task plus Glue/Athena medallion tables.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: financial-sentiment-radar
+  Environment:
+    Type: String
+    Default: dev
+  AwsRegion:
+    Type: String
+    Default: us-east-1
+  DataBucket:
+    Type: String
+  ImageUri:
+    Type: String
+  ClusterArn:
+    Type: String
+  SubnetIds:
+    Type: CommaDelimitedList
+  SecurityGroupId:
+    Type: String
+  TwitterBearerSecretArn:
+    Type: String
+    Description: Secrets Manager ARN containing X/Twitter bearer token.
+  ScheduleExpression:
+    Type: String
+    Default: rate(2 hours)
+  LiveMaxResults:
+    Type: Number
+    Default: 10
+  LiveTickers:
+    Type: String
+    Default: NVDA,TSLA,AAPL,GOOGL,MSFT,AMZN,JPM,BBVA
+  SentimentModel:
+    Type: String
+    Default: finbert
+    AllowedValues: [lexicon, finbert]
+  FinbertModelName:
+    Type: String
+    Default: ProsusAI/finbert
+  FinbertBatchSize:
+    Type: Number
+    Default: 16
+  TaskCpu:
+    Type: String
+    Default: '1024'
+  TaskMemory:
+    Type: String
+    Default: '4096'
+  GlueDatabaseName:
+    Type: String
+    Default: financial_sentiment_radar
+
+Resources:
+  LiveIngestionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${ProjectName}-${Environment}-live-ingestion
+      RetentionInDays: 14
+
+  LiveIngestionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-${Environment}-live-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadTwitterSecretForEcsInjection
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref TwitterBearerSecretArn
+
+  LiveIngestionTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-${Environment}-live-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LiveIngestionS3Bedrock
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub arn:aws:s3:::${DataBucket}/*
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub arn:aws:s3:::${DataBucket}
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource: '*'
+
+  LiveIngestionTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${ProjectName}-${Environment}-live-ingestion-task
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      ExecutionRoleArn: !GetAtt LiveIngestionExecutionRole.Arn
+      TaskRoleArn: !GetAtt LiveIngestionTaskRole.Arn
+      ContainerDefinitions:
+        - Name: live-ingestion
+          Image: !Ref ImageUri
+          Essential: true
+          Command:
+            - python
+            - -m
+            - financial_sentiment.jobs.live_twitter_ingest
+            - --max-results
+            - !Ref LiveMaxResults
+          Environment:
+            - Name: AWS_REGION
+              Value: !Ref AwsRegion
+            - Name: APP_BUCKET
+              Value: !Ref DataBucket
+            - Name: S3_BUCKET
+              Value: !Ref DataBucket
+            - Name: DATA_BUCKET
+              Value: !Ref DataBucket
+            - Name: LIVE_TICKERS
+              Value: !Ref LiveTickers
+            - Name: LIVE_MAX_RESULTS
+              Value: !Ref LiveMaxResults
+            - Name: LIVE_TRUSTED_ACCOUNTS_ONLY
+              Value: 'true'
+            - Name: SENTIMENT_MODEL
+              Value: !Ref SentimentModel
+            - Name: FINBERT_MODEL_NAME
+              Value: !Ref FinbertModelName
+            - Name: FINBERT_BATCH_SIZE
+              Value: !Ref FinbertBatchSize
+          Secrets:
+            - Name: TWITTER_BEARER
+              ValueFrom: !Ref TwitterBearerSecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LiveIngestionLogGroup
+              awslogs-region: !Ref AwsRegion
+              awslogs-stream-prefix: live-ingestion
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-${Environment}-scheduler-run-ecs-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RunLiveIngestionTask
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:RunTask
+                Resource: !Ref LiveIngestionTaskDefinition
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt LiveIngestionExecutionRole.Arn
+                  - !GetAtt LiveIngestionTaskRole.Arn
+
+  LiveIngestionSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub ${ProjectName}-${Environment}-twitter-live-every-2h
+      Description: Run controlled X/Twitter ingestion every 2 hours.
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      ScheduleExpression: !Ref ScheduleExpression
+      State: ENABLED
+      Target:
+        Arn: !Ref ClusterArn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        EcsParameters:
+          TaskDefinitionArn: !Ref LiveIngestionTaskDefinition
+          LaunchType: FARGATE
+          PlatformVersion: LATEST
+          TaskCount: 1
+          NetworkConfiguration:
+            AwsvpcConfiguration:
+              AssignPublicIp: ENABLED
+              SecurityGroups:
+                - !Ref SecurityGroupId
+              Subnets: !Ref SubnetIds
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Ref GlueDatabaseName
+        Description: Financial Sentiment Radar medallion datasets.
+
+  SilverTweetsTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Name: silver_tweets
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: parquet
+          projection.enabled: 'true'
+          projection.source.type: enum
+          projection.source.values: twitter_live,manual_upload
+          projection.ingestion_date.type: date
+          projection.ingestion_date.range: 2026-01-01,NOW
+          projection.ingestion_date.format: yyyy-MM-dd
+          storage.location.template: !Sub s3://${DataBucket}/silver/tweets/source=${!source}/ingestion_date=${!ingestion_date}/
+        PartitionKeys:
+          - Name: source
+            Type: string
+          - Name: ingestion_date
+            Type: string
+        StorageDescriptor:
+          Location: !Sub s3://${DataBucket}/silver/tweets/
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+          Columns:
+            - Name: tweet_id
+              Type: string
+            - Name: text
+              Type: string
+            - Name: clean_text
+              Type: string
+            - Name: author_id
+              Type: string
+            - Name: author_username
+              Type: string
+            - Name: created_at
+              Type: timestamp
+            - Name: query_ticker
+              Type: string
+            - Name: query_name
+              Type: string
+            - Name: primary_ticker
+              Type: string
+            - Name: sentiment
+              Type: string
+            - Name: sentiment_confidence
+              Type: double
+            - Name: positive_prob
+              Type: double
+            - Name: neutral_prob
+              Type: double
+            - Name: negative_prob
+              Type: double
+            - Name: sentiment_model
+              Type: string
+            - Name: topic
+              Type: string
+            - Name: run_id
+              Type: string
+            - Name: raw_s3_uri
+              Type: string
+
+  GoldSentimentTickerTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref GlueDatabase
+      TableInput:
+        Name: gold_sentiment_by_ticker_daily
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: parquet
+          projection.enabled: 'true'
+          projection.source.type: enum
+          projection.source.values: twitter_live,manual_upload
+          projection.ingestion_date.type: date
+          projection.ingestion_date.range: 2026-01-01,NOW
+          projection.ingestion_date.format: yyyy-MM-dd
+          storage.location.template: !Sub s3://${DataBucket}/gold/sentiment_by_ticker_daily/source=${!source}/ingestion_date=${!ingestion_date}/
+        PartitionKeys:
+          - Name: source
+            Type: string
+          - Name: ingestion_date
+            Type: string
+        StorageDescriptor:
+          Location: !Sub s3://${DataBucket}/gold/sentiment_by_ticker_daily/
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+          Columns:
+            - Name: ticker
+              Type: string
+            - Name: created_date
+              Type: string
+            - Name: positive
+              Type: bigint
+            - Name: neutral
+              Type: bigint
+            - Name: negative
+              Type: bigint
+            - Name: total
+              Type: bigint
+            - Name: pos_ratio
+              Type: double
+            - Name: neg_ratio
+              Type: double
+            - Name: run_id
+              Type: string
+
+Outputs:
+  LiveIngestionTaskDefinitionArn:
+    Value: !Ref LiveIngestionTaskDefinition
+  LiveIngestionScheduleName:
+    Value: !Ref LiveIngestionSchedule
+  GlueDatabaseName:
+    Value: !Ref GlueDatabase
+  SilverTweetsTable:
+    Value: silver_tweets
+  GoldSentimentTickerTable:
+    Value: gold_sentiment_by_ticker_daily
