@@ -48,7 +48,7 @@ class AppConfig:
     local_data_dir: Path = Path("data")
     use_bedrock: bool = False
     use_bedrock_schema: bool = False
-    bedrock_model_id: str = "amazon.titan-text-lite-v1"
+    bedrock_model_id: str = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
     twitter_bearer: str | None = None
     sentiment_model: str = "lexicon"
     finbert_model_name: str = "ProsusAI/finbert"
@@ -75,7 +75,9 @@ class AppConfig:
             local_data_dir=Path(os.getenv("LOCAL_DATA_DIR", "data")),
             use_bedrock=use_bedrock,
             use_bedrock_schema=_as_bool(os.getenv("USE_BEDROCK_SCHEMA"), default=use_bedrock),
-            bedrock_model_id=os.getenv("BEDROCK_MODEL_ID", "amazon.titan-text-lite-v1"),
+            bedrock_model_id=os.getenv(
+                "BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+            ),
             twitter_bearer=os.getenv("TWITTER_BEARER"),
             sentiment_model=sentiment_model,
             finbert_model_name=os.getenv("FINBERT_MODEL_NAME", "ProsusAI/finbert"),

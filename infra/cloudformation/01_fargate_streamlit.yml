@@ -35,7 +35,7 @@ Parameters:
     AllowedValues: ["true", "false"]
   BedrockModelId:
     Type: String
-    Default: "amazon.titan-text-lite-v1"
+    Default: "us.anthropic.claude-3-5-haiku-20241022-v1:0"
   UseBedrockSchema:
     Type: String
     Default: "false"

@@ -15,6 +15,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from financial_sentiment.additive_refinements import refine_batch_question_for_corpus
 from financial_sentiment.analytics import (
     sentiment_by_ticker,
     sentiment_trend,
@@ -34,10 +35,16 @@ from financial_sentiment.pipeline import process_tweets
 from financial_sentiment.retrieval import TweetRetriever, build_extractive_answer
 from financial_sentiment.schema_inference import infer_schema
 from financial_sentiment.storage import LocalStorage, S3Storage
-from financial_sentiment.streamlit_live_tab import show_live_tweets
-from financial_sentiment.twitter_live import fetch_recent_tweets
+from financial_sentiment.streamlit_live_tab import (
+    build_combined_query_corpus,
+    show_batch_dataset_tab,
+    show_live_search_panel,
+    show_live_topic_insights,
+    show_live_tweets,
+)
 
 configure_logging()
+
 logger = logging.getLogger(__name__)
 
 st.set_page_config(
@@ -367,52 +374,14 @@ def render_upload_controls(config: AppConfig) -> None:
 
 
 def render_live_controls(config: AppConfig) -> None:
-    """Render optional Twitter/X live search controls."""
-    live_query = st.sidebar.text_input(
-        "Consulta live en X",
-        value="(NVDA OR TSLA OR AAPL) lang:en -is:retweet",
+    """Render a pointer to the Consultas live-search panel."""
+
+    del config
+    st.sidebar.divider()
+    st.sidebar.caption(
+        "La búsqueda live avanzada está en la pestaña **Consultas**: "
+        "máximo 25 tweets, filtro de ruido con Bedrock e ingesta a tweets live."
     )
-    max_results = st.sidebar.slider("Tweets live", 10, 100, 25, 5)
-
-    if not st.sidebar.button("Buscar live"):
-        return
-
-    if not config.twitter_bearer:
-        st.sidebar.error("TWITTER_BEARER no está configurado.")
-        return
-
-    try:
-        with st.spinner("Consultando Twitter/X y procesando resultados..."):
-            rows = fetch_recent_tweets(
-                live_query,
-                config.twitter_bearer,
-                max_results=max_results,
-            )
-
-            if not rows:
-                st.sidebar.warning("Twitter/X no regresó resultados para esa consulta.")
-                return
-
-            processed = process_with_config(pd.DataFrame(rows), config)
-            processed["source_file"] = "twitter_live"
-            processed["loaded_at"] = datetime.now(UTC).isoformat()
-
-            current_default = st.session_state.get("default_df", pd.DataFrame())
-            updated_default = merge_with_default(current_default, processed)
-            latest_location = persist_default_batch(config, updated_default)
-
-            st.session_state.default_df = updated_default
-            st.session_state.active_df = updated_default
-            st.session_state.data_source = latest_location
-            st.session_state.default_source = latest_location
-            st.session_state.active_mode = "default_batch"
-
-            st.sidebar.success(f"{len(processed):,} tweets live agregados al batch default.")
-            st.rerun()
-
-    except Exception as exc:  # pragma: no cover - Streamlit UX path
-        logger.exception("twitter_live_processing_failed error_type=%s", type(exc).__name__)
-        st.sidebar.error(f"No pude consultar Twitter/X: {exc}")
 
 
 def show_sidebar(config: AppConfig) -> None:
@@ -497,7 +466,10 @@ def show_overview(df: pd.DataFrame) -> None:
 
 def show_questions(config: AppConfig, df: pd.DataFrame) -> None:
     """Render question-answering tab."""
-    st.subheader("Consulta sobre el corpus")
+    st.subheader("Consulta live y consulta sobre el corpus")
+    show_live_search_panel(config)
+    st.divider()
+    st.subheader("Consulta sobre batch + tweets live ya ingeridos")
     st.caption(
         "Ejemplos: ¿Qué se dice de NVIDIA?, ¿qué riesgos aparecen para Tesla?, "
         "¿hay tono negativo sobre bancos?"
@@ -507,8 +479,14 @@ def show_questions(config: AppConfig, df: pd.DataFrame) -> None:
     k = st.slider("Número de textos recuperados", 3, 20, 8)
 
     if st.button("Responder") and query.strip():
-        retriever = TweetRetriever(df)
-        results = retriever.search(query, k=k)
+        # additive refined batch question
+        try:
+            _batch_refinement = refine_batch_question_for_corpus(query)
+            question_for_search = _batch_refinement.refined
+        except Exception:
+            question_for_search = query
+        retriever = TweetRetriever(build_combined_query_corpus(config, df))
+        results = retriever.search(question_for_search, k=k)
 
         with st.spinner("Generando respuesta..."):
             if config.use_bedrock:
@@ -533,7 +511,7 @@ def show_questions(config: AppConfig, df: pd.DataFrame) -> None:
         st.dataframe(evidence, use_container_width=True)
 
 
-def show_topics(df: pd.DataFrame) -> None:
+def show_topics(config: AppConfig, df: pd.DataFrame) -> None:
     """Render topic analytics."""
     topic_table = top_risk_topics(df)
     chart = build_topic_bar(topic_table)
@@ -542,6 +520,7 @@ def show_topics(df: pd.DataFrame) -> None:
         st.plotly_chart(chart, use_container_width=True)
 
     st.dataframe(topic_table, use_container_width=True)
+    show_live_topic_insights(config, df)
 
 
 def show_data_table(df: pd.DataFrame) -> None:
@@ -590,7 +569,7 @@ def main() -> None:
     st.caption(f"Modo activo: {st.session_state.get('active_mode', 'default_batch')}")
 
     tab_overview, tab_questions, tab_topics, tab_live, tab_data = st.tabs(
-        ["Resumen", "Consultas", "Temas/Riesgo", "Tweets live", "Datos procesados"]
+        ["Resumen", "Consultas", "Temas/Riesgo", "Tweets live", "Datos batch"]
     )
 
     with tab_overview:
@@ -600,13 +579,13 @@ def main() -> None:
         show_questions(config, df)
 
     with tab_topics:
-        show_topics(df)
+        show_topics(config, df)
 
     with tab_live:
         show_live_tweets(config)
 
     with tab_data:
-        show_data_table(df)
+        show_batch_dataset_tab(df)
 
 
 if __name__ == "__main__":
