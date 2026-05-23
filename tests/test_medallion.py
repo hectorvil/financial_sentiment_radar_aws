@@ -1,9 +1,18 @@
+"""Automated tests for Financial Sentiment Radar.
+
+The tests in this module protect important product behavior so that future refactors can be made safely."""
+
 import pandas as pd
 
 from financial_sentiment.medallion import gold_sentiment_by_ticker_daily, silverize_tweets
 
 
 def test_silverize_tweets_adds_medallion_columns():
+    """Implements the `test_silverize_tweets_adds_medallion_columns` step used by this module.
+
+    Returns:
+        None: The function performs side effects or updates state in place.
+    """
     df = pd.DataFrame(
         {
             "tweet_id": ["1"],
@@ -20,6 +29,11 @@ def test_silverize_tweets_adds_medallion_columns():
 
 
 def test_gold_sentiment_by_ticker_daily_counts_sentiment():
+    """Implements the `test_gold_sentiment_by_ticker_daily_counts_sentiment` step used by this module.
+
+    Returns:
+        None: The function performs side effects or updates state in place.
+    """
     df = pd.DataFrame(
         {
             "created_at": ["2026-05-20T10:00:00Z", "2026-05-20T11:00:00Z"],

@@ -168,6 +168,8 @@ def run_live_ingestion(args: argparse.Namespace) -> dict[str, str | int | None]:
             "latest_uri": None,
         }
 
+    # Scheduled live tweets use the same sentiment path as manual queries:
+    # optional translation for non-English financial text, then FinBERT.
     processed = process_tweets_with_optional_translation(
         relevant_df,
         sentiment_model=args.sentiment_model,

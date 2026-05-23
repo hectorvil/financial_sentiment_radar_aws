@@ -113,6 +113,8 @@ def get_processed_prefix(config: AppConfig) -> str:
     return "processed/"
 
 
+# Central processing wrapper used by uploads and sample data. It keeps
+# Streamlit UI code independent from model-specific pipeline details.
 def process_with_config(raw_df: pd.DataFrame, config: AppConfig) -> pd.DataFrame:
     """Process tweets using either the new configurable pipeline or legacy pipeline."""
     sentiment_model = get_config_value(config, "sentiment_model", "lexicon")
@@ -168,6 +170,8 @@ def bootstrap_state(config: AppConfig) -> None:
             st.warning("Procesé el dataset de demo, pero no pude escribirlo en S3.")
 
 
+# Raw uploads are saved separately from processed outputs to preserve
+# lineage and support reprocessing when schema or model logic changes.
 def persist_raw_upload(config: AppConfig, filename: str, content: bytes) -> str:
     """Persist the raw uploaded file to S3/local storage."""
     storage = get_storage(config)

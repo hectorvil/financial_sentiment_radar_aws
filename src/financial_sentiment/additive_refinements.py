@@ -295,12 +295,27 @@ QUERY_ENTITY_EXPANSIONS: dict[str, str] = {
 
 @dataclass(frozen=True)
 class RefinedQuery:
+    """Container for `RefinedQuery` behavior.
+
+    The class groups related state and methods so the surrounding pipeline can
+    keep business logic modular, testable, and easier to reuse.
+    """
+
     original: str
     refined: str
     reason: str
 
 
 def _contains_any(text: str, terms: list[str]) -> bool:
+    """Implements the `_contains_any` step used by this module.
+
+    Args:
+        text: Input value consumed by this function.
+        terms: Input value consumed by this function.
+
+    Returns:
+        bool: Result produced by the function.
+    """
     lowered = text.lower()
     return any(term.lower() in lowered for term in terms)
 

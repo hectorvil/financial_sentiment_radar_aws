@@ -1,3 +1,7 @@
+"""Command-line utility for Financial Sentiment Radar.
+
+This script is intended to be executed from the repository root and uses environment variables or CLI arguments to operate on project resources."""
+
 from __future__ import annotations
 
 import argparse
@@ -15,6 +19,11 @@ from financial_sentiment.x_api_client import flatten_recent_search_response
 
 
 def parse_args() -> argparse.Namespace:
+    """Parses command-line arguments or structured model output.
+
+    Returns:
+        argparse.Namespace: Result produced by the function.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--bucket", required=True)
     parser.add_argument("--start-date", default=None, help="YYYY-MM-DD")
@@ -29,6 +38,16 @@ def parse_args() -> argparse.Namespace:
 
 
 def list_keys(s3, bucket: str, prefix: str) -> list[str]:
+    """Implements the `list_keys` step used by this module.
+
+    Args:
+        s3: Input value consumed by this function.
+        bucket: Input value consumed by this function.
+        prefix: Input value consumed by this function.
+
+    Returns:
+        list[str]: Result produced by the function.
+    """
     keys = []
     token = None
     while True:
@@ -44,6 +63,16 @@ def list_keys(s3, bucket: str, prefix: str) -> list[str]:
 
 
 def key_exists(s3, bucket: str, key: str) -> bool:
+    """Implements the `key_exists` step used by this module.
+
+    Args:
+        s3: Input value consumed by this function.
+        bucket: Input value consumed by this function.
+        key: Input value consumed by this function.
+
+    Returns:
+        bool: Result produced by the function.
+    """
     try:
         s3.head_object(Bucket=bucket, Key=key)
         return True
@@ -52,6 +81,16 @@ def key_exists(s3, bucket: str, key: str) -> bool:
 
 
 def read_json_s3(s3, bucket: str, key: str) -> dict:
+    """Reads data from storage or an API response.
+
+    Args:
+        s3: Input value consumed by this function.
+        bucket: Input value consumed by this function.
+        key: Input value consumed by this function.
+
+    Returns:
+        dict: Result produced by the function.
+    """
     obj = s3.get_object(Bucket=bucket, Key=key)
     raw = obj["Body"].read()
     if not raw or raw.strip() in {b"", b"{}"}:
@@ -60,17 +99,46 @@ def read_json_s3(s3, bucket: str, key: str) -> dict:
 
 
 def write_parquet_s3(s3, bucket: str, key: str, df: pd.DataFrame) -> None:
+    """Writes data to storage in the expected project format.
+
+    Args:
+        s3: Input value consumed by this function.
+        bucket: Input value consumed by this function.
+        key: Input value consumed by this function.
+        df: Input value consumed by this function.
+
+    Returns:
+        None: Result produced by the function.
+    """
     buf = io.BytesIO()
     df.to_parquet(buf, index=False)
     s3.put_object(Bucket=bucket, Key=key, Body=buf.getvalue())
 
 
 def read_parquet_s3(s3, bucket: str, key: str) -> pd.DataFrame:
+    """Reads data from storage or an API response.
+
+    Args:
+        s3: Input value consumed by this function.
+        bucket: Input value consumed by this function.
+        key: Input value consumed by this function.
+
+    Returns:
+        pd.DataFrame: Result produced by the function.
+    """
     obj = s3.get_object(Bucket=bucket, Key=key)
     return pd.read_parquet(io.BytesIO(obj["Body"].read()))
 
 
 def extract_ingestion_date(key: str) -> str:
+    """Moves raw or processed data into the medallion storage layout.
+
+    Args:
+        key: Input value consumed by this function.
+
+    Returns:
+        str: Result produced by the function.
+    """
     m = re.search(r"ingestion_date=(\d{4}-\d{2}-\d{2})", key)
     if not m:
         raise ValueError(f"No pude extraer ingestion_date de {key}")
@@ -78,10 +146,26 @@ def extract_ingestion_date(key: str) -> str:
 
 
 def extract_run_id(key: str) -> str:
+    """Implements the `extract_run_id` step used by this module.
+
+    Args:
+        key: Input value consumed by this function.
+
+    Returns:
+        str: Result produced by the function.
+    """
     return PurePosixPath(key).stem
 
 
 def extract_ticker(run_id: str) -> str:
+    """Implements the `extract_ticker` step used by this module.
+
+    Args:
+        run_id: Input value consumed by this function.
+
+    Returns:
+        str: Result produced by the function.
+    """
     m = re.match(r"twitter_live_([a-z0-9]+)_", run_id)
     if m:
         return m.group(1).upper()
@@ -92,6 +176,16 @@ def extract_ticker(run_id: str) -> str:
 
 
 def normalize_raw_response(payload: dict, run_id: str, query_ticker: str) -> pd.DataFrame:
+    """Implements the `normalize_raw_response` step used by this module.
+
+    Args:
+        payload: Input value consumed by this function.
+        run_id: Input value consumed by this function.
+        query_ticker: Input value consumed by this function.
+
+    Returns:
+        pd.DataFrame: Result produced by the function.
+    """
     try:
         df = flatten_recent_search_response(payload)
     except Exception:
@@ -131,6 +225,15 @@ def normalize_raw_response(payload: dict, run_id: str, query_ticker: str) -> pd.
 
 
 def process_raw(df: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
+    """Transforms input data into a processed representation.
+
+    Args:
+        df: Input value consumed by this function.
+        args: Input value consumed by this function.
+
+    Returns:
+        pd.DataFrame: Result produced by the function.
+    """
     try:
         processed = process_tweets(
             df,
@@ -167,6 +270,15 @@ def process_raw(df: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
 
 
 def make_gold(processed: pd.DataFrame, ingestion_date: str) -> pd.DataFrame:
+    """Implements the `make_gold` step used by this module.
+
+    Args:
+        processed: Input value consumed by this function.
+        ingestion_date: Input value consumed by this function.
+
+    Returns:
+        pd.DataFrame: Result produced by the function.
+    """
     df = processed.copy()
 
     if "created_at" in df.columns:
@@ -206,6 +318,17 @@ def make_gold(processed: pd.DataFrame, ingestion_date: str) -> pd.DataFrame:
 
 
 def update_latest(s3, bucket: str, processed: pd.DataFrame, latest_limit: int) -> None:
+    """Implements the `update_latest` step used by this module.
+
+    Args:
+        s3: Input value consumed by this function.
+        bucket: Input value consumed by this function.
+        processed: Input value consumed by this function.
+        latest_limit: Input value consumed by this function.
+
+    Returns:
+        None: Result produced by the function.
+    """
     latest_key = "gold/twitter_live/latest.parquet"
 
     if key_exists(s3, bucket, latest_key):
@@ -226,6 +349,11 @@ def update_latest(s3, bucket: str, processed: pd.DataFrame, latest_limit: int) -
 
 
 def main() -> None:
+    """Coordinates the command-line execution path for this script.
+
+    Returns:
+        None: Result produced by the function.
+    """
     args = parse_args()
     s3 = boto3.client("s3")
 

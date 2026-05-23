@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Utility script for Financial Sentiment Radar.
+#
+# Run from the repository root after loading the environment variables
+# required by the command being executed.
+# Documented by Financial Sentiment Radar documentation patch.
+
 set -euo pipefail
 
 AWS_REGION="${AWS_REGION:-us-east-1}"

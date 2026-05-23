@@ -1,3 +1,7 @@
+"""Automated tests for Financial Sentiment Radar.
+
+The tests in this module protect important product behavior so that future refactors can be made safely."""
+
 from financial_sentiment.live_query_catalog import (
     build_loose_fallback_query,
     build_reliable_broad_query,
@@ -6,6 +10,11 @@ from financial_sentiment.x_api_client import normalize_max_results
 
 
 def test_user_can_request_three_tweets():
+    """Implements the `test_user_can_request_three_tweets` step used by this module.
+
+    Returns:
+        None: The function performs side effects or updates state in place.
+    """
     assert normalize_max_results(1) == 3
     assert normalize_max_results(3) == 3
     assert normalize_max_results(25) == 25
@@ -13,6 +22,11 @@ def test_user_can_request_three_tweets():
 
 
 def test_mexico_query_is_not_exact_sentence_only():
+    """Implements the `test_mexico_query_is_not_exact_sentence_only` step used by this module.
+
+    Returns:
+        None: The function performs side effects or updates state in place.
+    """
     query, ticker, name = build_reliable_broad_query(
         "Qué se dice de México?",
         language="auto",
@@ -27,6 +41,11 @@ def test_mexico_query_is_not_exact_sentence_only():
 
 
 def test_loose_fallback_query_is_compact():
+    """Implements the `test_loose_fallback_query_is_compact` step used by this module.
+
+    Returns:
+        None: The function performs side effects or updates state in place.
+    """
     query = build_loose_fallback_query("Qué se dice de México?", language="auto")
     assert "México" in query or "Mexico" in query
     assert "-is:retweet" in query

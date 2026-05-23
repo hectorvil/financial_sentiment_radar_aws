@@ -20,6 +20,14 @@ class LocalStorage:
     """Read and write files under a local directory."""
 
     def __init__(self, root: Path):
+        """Implements the `__init__` step used by this module.
+
+        Args:
+            root: Input value consumed by this function.
+
+        Returns:
+            None: The function performs side effects or updates state in place.
+        """
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
 
@@ -75,6 +83,15 @@ class S3Storage:
     """Read and write dataframes and raw files in S3."""
 
     def __init__(self, bucket: str, region_name: str):
+        """Implements the `__init__` step used by this module.
+
+        Args:
+            bucket: Input value consumed by this function.
+            region_name: Input value consumed by this function.
+
+        Returns:
+            None: The function performs side effects or updates state in place.
+        """
         self.bucket = bucket
         self.client = boto3.client("s3", region_name=region_name)
 

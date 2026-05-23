@@ -302,20 +302,54 @@ TOPIC_ORDER = [
 
 
 def _strip_accents(text: str) -> str:
+    """Implements the `_strip_accents` step used by this module.
+
+    Args:
+        text: Input value consumed by this function.
+
+    Returns:
+        str: Result produced by the function.
+    """
     return "".join(
         char for char in unicodedata.normalize("NFKD", text) if not unicodedata.combining(char)
     )
 
 
 def _normalize(text: str) -> str:
+    """Implements the `_normalize` step used by this module.
+
+    Args:
+        text: Input value consumed by this function.
+
+    Returns:
+        str: Result produced by the function.
+    """
     return _strip_accents(str(text).lower())
 
 
 def _tokens(text: str) -> set[str]:
+    """Implements the `_tokens` step used by this module.
+
+    Args:
+        text: Input value consumed by this function.
+
+    Returns:
+        set[str]: Result produced by the function.
+    """
     return set(re.findall(r"[a-z0-9]+", text))
 
 
 def _matches_keyword(text: str, token_set: set[str], keyword: str) -> bool:
+    """Implements the `_matches_keyword` step used by this module.
+
+    Args:
+        text: Input value consumed by this function.
+        token_set: Input value consumed by this function.
+        keyword: Input value consumed by this function.
+
+    Returns:
+        bool: Result produced by the function.
+    """
     keyword_norm = _normalize(keyword).strip()
     if not keyword_norm:
         return False
