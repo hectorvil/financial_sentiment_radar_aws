@@ -84,6 +84,10 @@ A continuación se muestra además el flujo específico de consulta live e inges
 
 ![Consulta live e ingesta programada](docs/2infraestructuraingesta-consulta.png)
 
+Por último, la figura a continuación resume el flujo de carga manual de archivos, consulta histórica sobre el corpus procesado y analítica SQL mediante Athena:
+
+![Carga manual, consulta histórica y analítica](docs/3infraestructuraconsultahistorica-analitica.png)
+
 ```text
 Usuario / Scheduler
       |
@@ -1257,28 +1261,3 @@ Sin embargo, el diseño del producto, integración de servicios AWS, lógica de 
 Este repositorio es un proyecto académico para el curso de Arquitectura de Productos de Datos y Métodos de Gran Escala. Si se desea publicarlo como producto reutilizable, se recomienda agregar una licencia explícita, por ejemplo MIT, Apache 2.0 o una licencia privada institucional.
 
 ---
-
-## Checklist antes de entregar
-
-```bash
-PYTHONPATH=src uv run pytest -q
-uv run ruff check . --fix
-uv run ruff format .
-uv run ruff check .
-```
-
-Verificar que no hay secretos:
-
-```bash
-git status --short | grep -E "generated.env|\.env|\.pem|\.key|\.bak|bak_additive|__pycache__|\.DS_Store"
-```
-
-Commit sugerido:
-
-```bash
-git add app src tests infra scripts docs sql Dockerfile requirements.txt requirements.docker.txt pyproject.toml uv.lock README.md
-
-git commit -m "Finalize Financial Sentiment Radar AWS product"
-
-git push
-```
