@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from financial_sentiment.query_anchor_filter import build_precise_anchor_query
+
 # Spanish / Mexican finance, economics and market sources.
 # Keep handles without @ because X search uses from:<handle>.
 EXTRA_SPANISH_MX_ACCOUNTS = [
@@ -168,7 +170,7 @@ ADDITIONAL_TOPIC_KEYWORDS: dict[str, list[str]] = {
         "interest rate",
         "central bank",
     ],
-    "fx_peso": [
+    "fx_rates": [
         "peso",
         "mxn",
         "usd/mxn",
@@ -314,6 +316,12 @@ def refine_live_question_for_x(question: str) -> RefinedQuery:
     lowered = raw.lower()
     if not raw:
         return RefinedQuery(raw, raw, "empty query")
+
+    # Si la consulta tiene anclas fuertes, no la conviertas a una macro-query genérica.
+    # Ejemplos: Mexico Moody, Google antitrust DOJ, Nvidia earnings, Banxico tasa.
+    # La construcción precisa de query se encargará de usar esas anclas sin borrarlas.
+    if build_precise_anchor_query(raw, language="auto"):
+        return RefinedQuery(raw, raw, "strong_anchors_preserved")
 
     for key, expansion in QUERY_ENTITY_EXPANSIONS.items():
         if key in lowered:

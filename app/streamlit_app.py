@@ -31,7 +31,7 @@ from financial_sentiment.config import AppConfig
 from financial_sentiment.io_helpers import read_uploaded_dataframe
 from financial_sentiment.logging_utils import configure_logging
 from financial_sentiment.medallion import write_medallion_datasets
-from financial_sentiment.pipeline import process_tweets
+from financial_sentiment.multilingual_finbert import process_tweets_with_optional_translation
 from financial_sentiment.retrieval import TweetRetriever, build_extractive_answer
 from financial_sentiment.schema_inference import infer_schema
 from financial_sentiment.storage import LocalStorage, S3Storage
@@ -120,7 +120,7 @@ def process_with_config(raw_df: pd.DataFrame, config: AppConfig) -> pd.DataFrame
     finbert_batch_size = int(get_config_value(config, "finbert_batch_size", 16))
 
     try:
-        return process_tweets(
+        return process_tweets_with_optional_translation(
             raw_df,
             sentiment_model=sentiment_model,
             finbert_model_name=finbert_model_name,
@@ -128,7 +128,7 @@ def process_with_config(raw_df: pd.DataFrame, config: AppConfig) -> pd.DataFrame
         )
     except TypeError:
         logger.warning("process_tweets_legacy_signature_used")
-        return process_tweets(raw_df)
+        return process_tweets_with_optional_translation(raw_df)
 
 
 def bootstrap_state(config: AppConfig) -> None:

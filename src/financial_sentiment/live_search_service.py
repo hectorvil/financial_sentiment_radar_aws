@@ -18,11 +18,13 @@ from typing import Any
 import pandas as pd
 
 from financial_sentiment.live_query_catalog import (
+    CURATED_MARKET_ACCOUNT_UNIVERSE,
     build_loose_fallback_query,
     build_reliable_broad_query,
     classify_author_reliability,
     is_curated_market_author,
 )
+from financial_sentiment.live_ranking import add_engagement_ranking, candidate_pool_size
 from financial_sentiment.live_relevance import (
     apply_relevance_labels,
     get_relevance_labels,
@@ -35,7 +37,8 @@ from financial_sentiment.medallion import (
     write_medallion_datasets,
     write_twitter_bronze,
 )
-from financial_sentiment.pipeline import process_tweets
+from financial_sentiment.multilingual_finbert import process_tweets_with_optional_translation
+from financial_sentiment.query_anchor_filter import build_precise_anchor_query
 from financial_sentiment.x_api_client import (
     flatten_recent_search_response,
     normalize_max_results,
@@ -186,6 +189,39 @@ def _run_x_queries(
     search_scope: str,
 ) -> tuple[list[dict[str, Any]], list[str], str | None, str, str | None]:
     """Execute primary X query and broaden if no rows are returned."""
+    precise_anchor_query = build_precise_anchor_query(user_query, language=language)
+    if precise_anchor_query:
+        queries = [precise_anchor_query]
+        payloads = [
+            _search_with_fallback(
+                bearer_token=bearer_token,
+                query=precise_anchor_query,
+                max_results=max_results,
+                sort_order=sort_order,
+            )
+        ]
+
+        rows = _flatten_payloads(
+            payloads=payloads,
+            queries=queries,
+            inferred_ticker=None,
+            inferred_name="Precise anchored financial query",
+            max_rows=max_results,
+        )
+
+        warning = (
+            "Se usó una búsqueda precisa por entidades financieras clave. "
+            "No se hizo fallback amplio automático para controlar costo y ruido."
+        )
+
+        if not rows:
+            warning = (
+                "No encontré tweets que conservaran las entidades clave de tu consulta. "
+                "Puedes intentar con más resultados, recency o una frase menos restrictiva."
+            )
+
+        return payloads, queries, None, "Precise anchored financial query", warning
+
     broad_limit, curated_limit = _allocation(max_results, search_scope)
     primary_scope = "curated_accounts" if search_scope == "curated_accounts" else "broad_all_x"
 
@@ -215,20 +251,29 @@ def _run_x_queries(
     )
 
     warning: str | None = None
-    if not rows:
+    low_coverage_threshold = min(max_results, max(10, max_results // 2))
+
+    if len(rows) < low_coverage_threshold:
         fallback_query = build_loose_fallback_query(user_query, language=language)
-        warning = (
-            "La primera query no regresó resultados; se reintentó con una query menos restrictiva."
-        )
-        queries.append(fallback_query)
-        payloads.append(
-            _search_with_fallback(
-                bearer_token=bearer_token,
-                query=fallback_query,
-                max_results=max_results,
-                sort_order="recency",
+
+        if not rows:
+            warning = "La primera query no regresó resultados; se reintentó con una query menos restrictiva."
+        else:
+            warning = (
+                f"La primera query regresó pocos candidatos ({len(rows)}); "
+                "se agregó una búsqueda más amplia para mejorar cobertura."
             )
-        )
+
+        if fallback_query not in queries:
+            queries.append(fallback_query)
+            payloads.append(
+                _search_with_fallback(
+                    bearer_token=bearer_token,
+                    query=fallback_query,
+                    max_results=max_results,
+                    sort_order="recency",
+                )
+            )
 
     if curated_limit:
         curated_query, curated_ticker, curated_name = build_reliable_broad_query(
@@ -270,12 +315,15 @@ def preview_direct_live_search(
 ) -> LiveSearchPreview:
     """Search, label and classify live tweets without writing to S3."""
     safe_max = normalize_max_results(max_results)
+    requested_results = safe_max
+    candidate_results = candidate_pool_size(safe_max)
+
     run_id = make_run_id("twitter_consultas_live")
 
     payloads, queries, inferred_ticker, inferred_name, warning = _run_x_queries(
         user_query=user_query,
         bearer_token=bearer_token,
-        max_results=safe_max,
+        max_results=candidate_results,
         language=language,
         sort_order=sort_order,
         max_accounts=max_accounts,
@@ -289,9 +337,15 @@ def preview_direct_live_search(
         queries=queries,
         inferred_ticker=inferred_ticker,
         inferred_name=inferred_name,
-        max_rows=safe_max,
+        max_rows=candidate_results,
     )
     raw_df = pd.DataFrame(rows)
+    raw_df = add_engagement_ranking(
+        raw_df,
+        curated_accounts=set(CURATED_MARKET_ACCOUNT_UNIVERSE),
+    )
+    raw_df = raw_df.head(candidate_results).reset_index(drop=True)
+    rows = raw_df.to_dict("records")
 
     logger.info(
         "direct_live_preview run_id=%s requested=%s raw_rows=%s use_bedrock=%s",
@@ -346,7 +400,7 @@ def preview_direct_live_search(
             warning=warning,
         )
 
-    processed = process_tweets(
+    processed = process_tweets_with_optional_translation(
         relevant_raw,
         sentiment_model=sentiment_model,
         finbert_model_name=finbert_model_name,
@@ -364,7 +418,7 @@ def preview_direct_live_search(
         if "id" in processed.columns:
             processed["tweet_id"] = processed["id"].astype(str)
         else:
-            processed = processed.reset_index(drop=True)
+            processed = processed.head(requested_results).reset_index(drop=True)
             relevant_raw = relevant_raw.reset_index(drop=True)
             processed["tweet_id"] = (
                 relevant_raw["tweet_id"].astype(str).iloc[: len(processed)].to_list()

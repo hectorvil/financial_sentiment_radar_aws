@@ -147,16 +147,117 @@ class RelevanceLabel:
     reason: str
 
 
-def _extract_json_array(text: str) -> list[dict[str, Any]]:
-    """Extract a JSON array from an LLM response."""
-    stripped = text.strip()
-    if stripped.startswith("["):
-        return json.loads(stripped)
+def _extract_json_array(output_text: str) -> list[dict]:
+    """Extract label objects from a Bedrock response.
 
-    match = re.search(r"\[[\s\S]*\]", stripped)
-    if not match:
-        raise ValueError("Bedrock response did not contain a JSON array")
-    return json.loads(match.group(0))
+    Accepts:
+    - raw JSON arrays
+    - markdown ```json blocks
+    - prose around JSON
+    - JSON objects with results/items/tweets/labels/data
+    - partially truncated arrays, by salvaging complete JSON objects
+    """
+    raw = str(output_text or "").strip()
+
+    def normalize(parsed):
+        if isinstance(parsed, list):
+            return [item for item in parsed if isinstance(item, dict)]
+
+        if isinstance(parsed, dict):
+            for key in ["results", "items", "tweets", "labels", "data"]:
+                value = parsed.get(key)
+                if isinstance(value, list):
+                    return [item for item in value if isinstance(item, dict)]
+
+            # Single object response.
+            if any(k in parsed for k in ["index", "tweet_id", "is_noise", "relevance_score"]):
+                return [parsed]
+
+        return []
+
+    def try_json(candidate: str) -> list[dict]:
+        candidate = candidate.strip()
+        candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"\s*```$", "", candidate)
+
+        attempts = [candidate]
+
+        if "[" in candidate and "]" in candidate:
+            attempts.append(candidate[candidate.find("[") : candidate.rfind("]") + 1])
+
+        if "{" in candidate and "}" in candidate:
+            attempts.append(candidate[candidate.find("{") : candidate.rfind("}") + 1])
+
+        for attempt in attempts:
+            try:
+                parsed = json.loads(attempt)
+            except Exception:
+                continue
+            labels = normalize(parsed)
+            if labels:
+                return labels
+
+        return []
+
+    candidates = [raw]
+
+    fenced_blocks = re.findall(
+        r"```(?:json)?\s*(.*?)(?:```|$)",
+        raw,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    candidates.extend(block.strip() for block in fenced_blocks if block.strip())
+
+    for candidate in candidates:
+        labels = try_json(candidate)
+        if labels:
+            return labels
+
+    # Last resort: salvage complete flat JSON objects from a truncated array.
+    objects = []
+    depth = 0
+    start_idx = None
+    in_string = False
+    escape = False
+
+    for i, char in enumerate(raw):
+        if escape:
+            escape = False
+            continue
+
+        if char == "\\":
+            escape = True
+            continue
+
+        if char == '"':
+            in_string = not in_string
+            continue
+
+        if in_string:
+            continue
+
+        if char == "{":
+            if depth == 0:
+                start_idx = i
+            depth += 1
+
+        elif char == "}":
+            depth -= 1
+            if depth == 0 and start_idx is not None:
+                obj_text = raw[start_idx : i + 1]
+                try:
+                    parsed = json.loads(obj_text)
+                    if isinstance(parsed, dict):
+                        objects.append(parsed)
+                except Exception:
+                    pass
+                start_idx = None
+
+    if objects:
+        return objects
+
+    preview = raw[:500].replace("\n", " ")
+    raise ValueError(f"Bedrock response did not contain usable JSON labels. preview={preview!r}")
 
 
 def _invoke_bedrock_text(client: Any, model_id: str, prompt: str, *, max_tokens: int = 1200) -> str:
@@ -289,7 +390,7 @@ Tweets:
 """.strip()
 
     client = boto3.client("bedrock-runtime", region_name=region_name)
-    output_text = _invoke_bedrock_text(client, model_id, prompt, max_tokens=1200)
+    output_text = _invoke_bedrock_text(client, model_id, prompt, max_tokens=2500)
     parsed = _extract_json_array(output_text)
 
     labels: list[RelevanceLabel] = []

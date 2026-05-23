@@ -1,549 +1,643 @@
 # Financial Sentiment Radar AWS
 
-## 1. Descripción general
+Producto de datos para monitorear sentimiento financiero en X/Twitter y archivos cargados manualmente, priorizar compañías o temas con señales de riesgo de mercado/reputación, consultar evidencia textual y publicar datasets procesados en una arquitectura tipo Medallion sobre S3.
 
-**Financial Sentiment Radar AWS** es un producto de datos construido en AWS para analizar sentimiento financiero a partir de textos tipo tweet, publicaciones financieras o archivos tabulares cargados por el usuario.
-
-El objetivo del proyecto es transformar una aplicación de análisis de sentimiento financiero en un producto de datos desplegable, reproducible y consultable desde una interfaz web en **Streamlit**, usando servicios de AWS como **ECS Fargate, ECR, S3, CloudWatch, IAM, Application Load Balancer y CloudFormation**.
-
-El producto permite:
-
-- Cargar archivos `.csv` o `.parquet` con tweets o textos financieros.
-- Detectar automáticamente cuál columna contiene el texto a analizar.
-- Clasificar sentimiento financiero por texto.
-- Identificar empresas o tickers mencionados.
-- Agregar métricas por sentimiento, empresa y tema.
-- Consultar en lenguaje natural qué ocurre con una empresa.
-- Guardar datos crudos, procesados y outputs en S3.
-- Desplegar la app en AWS mediante contenedores Docker.
+El proyecto combina una aplicación Streamlit, ingesta programada en ECS Fargate, búsqueda live en X, clasificación de sentimiento con FinBERT, etiquetado de ruido y resumen con Amazon Bedrock, almacenamiento en S3 y tablas consultables por Athena/Glue.
 
 ---
 
-## 2. Problema que resuelve
+## Tabla de contenidos
 
-En finanzas, redes sociales y noticias generan señales útiles sobre percepción de mercado, riesgos, eventos corporativos y expectativas de inversionistas. Sin embargo, estos textos suelen venir en formatos no estructurados, con columnas distintas, ruido, diferentes idiomas y alto volumen.
-
-Este producto busca responder preguntas como:
-
-- ¿Qué sentimiento domina sobre Tesla, Google, Nvidia o BBVA?
-- ¿El tono reciente es positivo, neutral o negativo?
-- ¿Qué temas explican el sentimiento?
-- ¿Qué tweets o publicaciones sirven como evidencia?
-- ¿Cómo puedo analizar archivos nuevos aunque no tengan el mismo esquema de columnas?
-
-La solución no se limita a graficar datos crudos. Enriquecemos los textos con capas analíticas: inferencia de esquema, clasificación de sentimiento, detección de empresas, temas y recuperación de evidencia para consultas.
-
----
-
-## 3. Usuario final
-
-El usuario final puede ser:
-
-- Un analista financiero.
-- Un equipo de riesgos de mercado.
-- Un equipo de estrategia o research.
-- Un área de comunicación corporativa.
-- Un inversionista que quiere monitorear percepción pública.
-- Un equipo académico que busca demostrar un producto de datos en AWS.
-
-La experiencia esperada es que el usuario entre a una aplicación web, cargue un archivo o use datos de ejemplo, obtenga métricas de sentimiento y pueda preguntar en lenguaje natural qué está ocurriendo con una empresa.
+1. [Objetivo del proyecto](#objetivo-del-proyecto)
+2. [Qué problema resuelve](#qué-problema-resuelve)
+3. [Arquitectura funcional](#arquitectura-funcional)
+4. [Secciones de la aplicación](#secciones-de-la-aplicación)
+5. [Entradas y salidas](#entradas-y-salidas)
+6. [Estructura del repositorio](#estructura-del-repositorio)
+7. [Componentes principales del código](#componentes-principales-del-código)
+8. [Instalación local](#instalación-local)
+9. [Variables de entorno](#variables-de-entorno)
+10. [Ejecución local](#ejecución-local)
+11. [Pruebas, linting y formato](#pruebas-linting-y-formato)
+12. [Docker](#docker)
+13. [Despliegue en AWS](#despliegue-en-aws)
+14. [Ingesta live programada](#ingesta-live-programada)
+15. [Búsqueda live manual con Bedrock](#búsqueda-live-manual-con-bedrock)
+16. [Medallion: Bronze, Silver y Gold](#medallion-bronze-silver-y-gold)
+17. [Reprocesamiento y backfills](#reprocesamiento-y-backfills)
+18. [Athena y Glue Catalog](#athena-y-glue-catalog)
+19. [Monitoreo y validación operativa](#monitoreo-y-validación-operativa)
+20. [Seguridad y costos](#seguridad-y-costos)
+21. [Documentos importantes](#documentos-importantes)
+22. [Referencias](#referencias)
+23. [Licencia](#licencia)
 
 ---
 
-## 4. Arquitectura general
+## Objetivo del proyecto
 
-La arquitectura combina una aplicación Streamlit con infraestructura administrada en AWS.
+**Financial Sentiment Radar AWS** busca convertir tweets financieros, consultas live y archivos cargados manualmente en un producto de datos operativo. El objetivo no es solo clasificar sentimiento, sino construir un flujo completo de datos que permita:
+
+- Buscar señales financieras recientes en X/Twitter.
+- Filtrar ruido con Bedrock y reglas financieras.
+- Clasificar sentimiento financiero con FinBERT.
+- Identificar tickers, temas y riesgos.
+- Guardar datos crudos, procesados y agregados en S3.
+- Consultar resultados desde Streamlit, Athena o datasets Parquet.
+- Mantener una ingesta automática cada 2 horas para alimentar dashboards live.
+
+El producto está pensado como un MVP de monitoreo financiero y reputacional para equipos de data, riesgo, research, analítica o producto.
+
+---
+
+## Qué problema resuelve
+
+Las redes sociales contienen señales útiles para mercados financieros, reputación corporativa y eventos macroeconómicos, pero también contienen mucho ruido: memes, política no financiera, spam, posts virales sin relación con inversión, duplicados o lenguaje ambiguo.
+
+Este proyecto reduce ese ruido usando una arquitectura en capas:
+
+1. **Búsqueda controlada en X/Twitter** mediante queries financieras.
+2. **Ranking local** por interacción, fuente curada y relevancia financiera.
+3. **Filtro de anclas fuertes** para preservar entidades clave de la consulta, por ejemplo `Moody + Mexico + rating`.
+4. **Bedrock** para ruido/no ruido, resumen y traducción selectiva.
+5. **FinBERT** para sentimiento financiero.
+6. **Reglas determinísticas** para casos donde FinBERT en inglés puede fallar con texto financiero en español.
+7. **Medallion en S3** para que los datos puedan reutilizarse en Athena, dashboards o procesos batch.
+
+---
+
+## Arquitectura funcional
 
 ```text
-Usuario
-  ↓
-Application Load Balancer
-  ↓
-ECS Fargate
-  ↓
-Contenedor Docker con Streamlit + Python
-  ↓
-Pipeline analítico
-  ├── Inferencia de esquema
-  ├── Clasificación de sentimiento
-  ├── Detección de tickers
-  ├── Clasificación temática
-  └── Consulta con evidencia
-  ↓
-S3
-  ├── raw/
-  ├── schema-mappings/
-  ├── processed/
-  └── outputs/
-  ↓
-CloudWatch Logs
+Usuario / Scheduler
+      |
+      |-- Consulta manual en Streamlit
+      |      |
+      |      |-- refine_live_question_for_x()
+      |      |-- build_precise_anchor_query()
+      |      |-- X Recent Search API
+      |      |-- ranking local por engagement/fuente/relevancia
+      |      |-- filtro de anclas fuertes
+      |      |-- Bedrock: ruido/no ruido + resumen
+      |      |-- traducción selectiva a inglés financiero
+      |      |-- FinBERT: sentimiento
+      |      |-- preview en Streamlit
+      |      |-- ingesta confirmada por usuario a S3
+      |
+      |-- Ingesta automática cada 2 horas
+      |      |
+      |      |-- EventBridge Scheduler
+      |      |-- ECS Fargate task
+      |      |-- X Recent Search API por ticker
+      |      |-- Bronze JSON
+      |      |-- Bedrock relevance / fallback heurístico
+      |      |-- FinBERT
+      |      |-- Silver Parquet
+      |      |-- Gold agregados
+      |      |-- gold/twitter_live/latest.parquet
+      |
+      |-- Carga manual CSV/Parquet
+             |
+             |-- inferencia de columna de texto
+             |-- procesamiento batch
+             |-- processed/tweets/financial_sentiment_latest.parquet
+             |-- dashboards batch
 ```
+
+Servicios AWS usados:
+
+- **Amazon S3**: almacenamiento de datos raw, processed, bronze, silver y gold.
+- **Amazon ECS on Fargate**: ejecución de la app Streamlit y jobs de ingesta.
+- **Amazon ECR**: registro de imágenes Docker.
+- **Application Load Balancer**: exposición pública de la app Streamlit.
+- **AWS Secrets Manager**: almacenamiento del bearer token de X/Twitter.
+- **Amazon Bedrock**: filtro de ruido, resumen y traducción selectiva.
+- **Amazon EventBridge Scheduler**: ingesta automática cada 2 horas.
+- **AWS Glue Data Catalog / Athena**: catálogo y consulta SQL de capas Silver/Gold.
+- **CloudWatch Logs**: diagnóstico de la app y jobs programados.
 
 ---
 
-## 5. Componentes principales de AWS
+## Secciones de la aplicación
 
-### 5.1 Amazon ECR
-
-Amazon ECR funciona como repositorio privado de imágenes Docker. La app se empaqueta como imagen Docker y se sube a ECR.
-
-Flujo:
+La aplicación principal está en:
 
 ```text
-Dockerfile
-  ↓
-docker buildx build --platform linux/amd64
-  ↓
-Amazon ECR
-  ↓
-ECS Fargate descarga la imagen
+app/streamlit_app.py
 ```
 
-El script principal es:
-
-```bash
-./scripts/06_build_push_app.sh
-```
-
-Este script construye la imagen en arquitectura `linux/amd64`, necesaria para que ECS Fargate pueda ejecutarla correctamente.
-
----
-
-### 5.2 ECS Fargate
-
-ECS Fargate ejecuta la app Streamlit como un contenedor administrado. No se administra una instancia EC2 manualmente.
-
-ECS usa una task definition que indica:
-
-- Imagen Docker en ECR.
-- CPU y memoria asignada.
-- Variables de entorno.
-- Puerto del contenedor.
-- Roles IAM.
-- Configuración de logs.
-
-La app escucha en el puerto:
+Y se apoya en componentes de UI definidos en:
 
 ```text
-8501
+src/financial_sentiment/streamlit_live_tab.py
 ```
 
----
+### 1. Resumen
 
-### 5.3 Application Load Balancer
+Muestra KPIs generales del batch activo:
 
-El Application Load Balancer expone la app al usuario final mediante una URL pública.
+- Textos procesados.
+- Menciones mapeadas a tickers.
+- Ratio positivo.
+- Ratio neutral.
+- Ratio negativo.
+- Ranking de tickers.
+- Tendencia temporal de sentimiento.
 
-Flujo:
+### 2. Consultas
+
+Contiene dos funciones:
+
+**Búsqueda live en X/Twitter con Bedrock**
+
+- El usuario escribe una consulta natural, por ejemplo:
+  - `Mexico Moody credit rating Baa3`
+  - `Google antitrust DOJ`
+  - `Banxico tasa inflación`
+  - `Nvidia earnings guidance`
+- El sistema refina la consulta sin borrar entidades fuertes.
+- Si hay anclas fuertes, construye una query precisa y de bajo costo.
+- Trae candidatos desde X.
+- Rankea por interacción, cuenta curada y relevancia financiera.
+- Filtra ruido con Bedrock.
+- Traduce selectivamente textos financieros no ingleses antes de FinBERT.
+- Clasifica sentimiento con FinBERT.
+- Muestra preview antes de ingestar.
+- El usuario decide si ingestar los tweets relevantes a S3.
+
+**Consulta sobre batch + tweets live ya ingeridos**
+
+- Busca evidencia en el corpus ya procesado.
+- Usa recuperación local sobre tweets batch + live.
+- Usa Bedrock para resumir en español cuando está disponible.
+- Tiene fallback extractivo local si Bedrock falla.
+
+### 3. Temas/Riesgo
+
+Muestra concentración negativa y positiva por tema. Los topics se clasifican con reglas en:
 
 ```text
-Usuario → ALB → Target Group → ECS Fargate task → Streamlit
+src/financial_sentiment/topics.py
 ```
 
-El ALB recibe tráfico HTTP y lo redirige a la task de Fargate.
-
----
-
-### 5.4 Target Group
-
-El Target Group conecta el ALB con la task de ECS y ejecuta health checks para verificar que la app esté viva.
-
-El estado esperado es:
+Taxonomía principal:
 
 ```text
-healthy
+sovereign_credit_rating
+monetary_policy
+fx_rates
+geopolitical_risk
+regulation_antitrust
+commodities_energy
+credit_risk
+banking_sector
+labor_market
+analyst_rating
+earnings
+market_action
+ai_chips
+product_launch
+risk_compliance
+general_market
 ```
 
----
+### 4. Tweets live
 
-### 5.5 Amazon S3
-
-S3 es la capa de almacenamiento del producto de datos.
-
-Se usa para guardar:
+Lee:
 
 ```text
-raw/              archivos originales cargados por el usuario
-schema-mappings/ resultados de inferencia de columnas
-processed/        datasets enriquecidos con sentimiento y metadata
-outputs/          descargas, resultados o artefactos generados
+gold/twitter_live/latest.parquet
 ```
 
----
+Muestra:
 
-### 5.6 CloudWatch Logs
+- Tweets live ingeridos.
+- Ratios por sentimiento.
+- Ranking live de tickers.
+- Tendencia temporal.
+- Tabla descargable de tweets capturados.
 
-CloudWatch centraliza los logs de la aplicación y de las tasks de ECS.
+### 5. Datos batch
 
-Sirve para depurar:
+Antes llamada `Datos procesados`; muestra el dataset batch activo cargado manualmente o generado por default.
 
-- Errores de Python.
-- Problemas de permisos.
-- Fallas en lectura/escritura a S3.
-- Fallas al invocar Bedrock.
-- Problemas de carga del modelo.
-- Errores de arranque del contenedor.
+Permite:
 
-Comando útil:
-
-```bash
-aws logs tail "/ecs/financial-sentiment-radar-dev" \
-  --region us-east-1 \
-  --since 30m
-```
+- Filtrar por ticker.
+- Revisar textos procesados.
+- Revisar columnas finales.
+- Descargar datos batch.
 
 ---
 
-### 5.7 IAM Roles
+## Entradas y salidas
 
-La aplicación no debe guardar credenciales en el código. ECS usa roles IAM para acceder a servicios de AWS.
+### Entradas
 
-Permisos principales:
+1. **Archivos manuales**
 
-- Leer/escribir en S3.
-- Enviar logs a CloudWatch.
-- Descargar imagen desde ECR.
-- Invocar modelos de Bedrock si está habilitado.
-
----
-
-### 5.8 CloudFormation
-
-Toda la infraestructura se crea mediante CloudFormation.
-
-Plantillas principales:
+Formatos:
 
 ```text
-infra/cloudformation/00_foundation.yml
-infra/cloudformation/01_fargate_streamlit.yml
+.csv
+.parquet
 ```
 
-La primera crea recursos base como S3 y ECR.
-
-La segunda crea:
-
-- VPC.
-- Subnets.
-- Security Groups.
-- ALB.
-- Target Group.
-- ECS Cluster.
-- ECS Service.
-- Task Definition.
-- IAM Roles.
-- CloudWatch Logs.
-
----
-
-## 6. Pipeline analítico
-
-El pipeline del producto tiene varias capas.
-
-```text
-Archivo CSV/Parquet
-  ↓
-Lectura de datos
-  ↓
-Inferencia de columna de texto
-  ↓
-Estandarización del esquema
-  ↓
-Preprocesamiento
-  ↓
-Clasificación de sentimiento
-  ↓
-Detección de tickers
-  ↓
-Clasificación temática
-  ↓
-Persistencia y visualización
-```
-
----
-
-## 7. Inferencia de esquema
-
-Una mejora importante del proyecto es que ya no asumimos que todos los archivos tienen una columna llamada `text`.
-
-El usuario puede subir archivos con columnas como:
+Columnas esperadas o inferibles:
 
 ```text
 text
+input
 tweet
-full_text
 content
 body
 message
-post
-sentence
-texto
-comentario
+clean_text
 ```
 
-El módulo:
+La app intenta inferir cuál columna contiene texto mediante reglas en:
 
 ```text
 src/financial_sentiment/schema_inference.py
 ```
 
-detecta cuál columna parece contener el texto principal.
+2. **X/Twitter Recent Search API**
 
-Primero usa reglas determinísticas. Evalúa:
-
-- Nombre de la columna.
-- Tipo de dato.
-- Longitud promedio del texto.
-- Presencia de lenguaje natural.
-- Presencia de cashtags como `$TSLA`.
-- Presencia de hashtags.
-- Presencia de menciones.
-- Presencia de URLs.
-- Términos financieros.
-
-También penaliza columnas que parecen:
-
-- IDs.
-- Fechas.
-- Usuarios.
-- Etiquetas.
-- Scores.
-- Valores numéricos.
-
-Si hay ambigüedad y Bedrock está activado, se manda a Bedrock un resumen pequeño del esquema y algunas muestras.
-
----
-
-## 8. Uso de Bedrock
-
-Bedrock se usa en dos lugares.
-
-### 8.1 Bedrock para inferencia de esquema
-
-Cuando el archivo tiene columnas ambiguas, Bedrock puede ayudar a decidir cuál contiene el texto principal.
-
-Ejemplo de salida esperada:
-
-```json
-{
-  "tweet_text_column": "content",
-  "confidence": 0.91,
-  "reason": "La columna contiene publicaciones completas con lenguaje natural y términos financieros.",
-  "label_column": "label",
-  "timestamp_column": "created_at",
-  "ticker_column": null
-}
-```
-
-Bedrock no recibe todo el dataset. Solo recibe:
-
-- Nombres de columnas.
-- Tipos de datos.
-- Algunas muestras pequeñas.
-
-Esto reduce costo y evita enviar datos innecesarios.
-
----
-
-### 8.2 Bedrock para consultas del usuario
-
-Cuando el usuario pregunta:
+Usada por:
 
 ```text
-¿Qué pasa con Tesla?
-¿Qué ocurre con Google?
-¿Qué riesgos aparecen para Nvidia?
+src/financial_sentiment/x_api_client.py
+src/financial_sentiment/live_search_service.py
+src/financial_sentiment/jobs/live_twitter_ingest.py
 ```
 
-La app recupera evidencia del corpus procesado y se la pasa a Bedrock para generar una respuesta ejecutiva.
+3. **Secrets Manager**
 
-Bedrock debe responder únicamente con base en la evidencia proporcionada. No debe inventar información ni dar recomendaciones de compra o venta.
-
----
-
-## 9. Modelos de sentimiento
-
-El producto soporta dos modos de clasificación.
-
-### 9.1 Modelo léxico financiero
-
-Es el modo default.
-
-```bash
-SENTIMENT_MODEL=lexicon
-```
-
-Ventajas:
-
-- Rápido.
-- Barato.
-- Interpretable.
-- No requiere descargar modelos pesados.
-- Funciona bien para MVP y demos.
-
-Desventajas:
-
-- Menor capacidad para entender contexto.
-- Puede confundirse con frases ambiguas o matices financieros.
-
----
-
-### 9.2 FinBERT
-
-FinBERT es un modelo transformer especializado en lenguaje financiero.
-
-```bash
-SENTIMENT_MODEL=finbert
-```
-
-El módulo principal es:
+Se usa para recuperar el bearer token de X/Twitter:
 
 ```text
-src/financial_sentiment/finbert.py
+financial-sentiment-radar/twitter-bearer
 ```
 
-FinBERT clasifica cada texto en:
+4. **Bedrock**
+
+Modelo recomendado:
 
 ```text
-positive
-neutral
-negative
+us.anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
-y genera probabilidades:
+Se usa para:
+
+- Ruido/no ruido.
+- Resumen en español.
+- Traducción selectiva de textos financieros en español/otros idiomas.
+
+### Salidas
+
+1. **Batch processed**
 
 ```text
-positive_prob
-neutral_prob
-negative_prob
-sentiment_confidence
+s3://<APP_BUCKET>/processed/tweets/financial_sentiment_latest.parquet
 ```
 
-Ventajas:
+2. **Bronze live**
 
-- Mejor comprensión de lenguaje financiero.
-- Mejor manejo de contexto.
-- Mejor interpretación de frases como earnings, guidance, downgrade, margins, delivery numbers, etc.
+Raw JSON de X:
 
-Desventajas:
+```text
+s3://<APP_BUCKET>/bronze/twitter_live/ingestion_date=YYYY-MM-DD/<run_id>.json
+```
 
-- Mayor consumo de memoria.
-- Mayor tamaño de imagen Docker.
-- Mayor tiempo de arranque.
-- Mayor costo en Fargate.
+3. **Silver live**
 
-Para usar FinBERT en ECS se recomienda:
+Tweets normalizados y enriquecidos:
 
-```bash
-TASK_CPU=1024
-TASK_MEMORY=4096
+```text
+s3://<APP_BUCKET>/silver/tweets/source=twitter_live/ingestion_date=YYYY-MM-DD/<run_id>.parquet
+```
+
+4. **Gold live**
+
+Agregado diario por ticker/sentimiento:
+
+```text
+s3://<APP_BUCKET>/gold/sentiment_by_ticker_daily/source=twitter_live/ingestion_date=YYYY-MM-DD/<run_id>.parquet
+```
+
+5. **Latest live para Streamlit**
+
+```text
+s3://<APP_BUCKET>/gold/twitter_live/latest.parquet
 ```
 
 ---
 
-## 10. Diferencia entre FinBERT y Bedrock
-
-FinBERT y Bedrock no cumplen la misma función.
-
-| Componente | Función |
-|---|---|
-| FinBERT | Clasifica sentimiento tweet por tweet |
-| Bedrock | Identifica columnas ambiguas y genera respuestas en lenguaje natural |
-| Streamlit | Permite cargar archivos, visualizar resultados y consultar |
-| S3 | Guarda raw, processed, schema mappings y outputs |
-
-Arquitectura ideal:
-
-```text
-Tweets
-  ↓
-FinBERT clasifica sentimiento
-  ↓
-Pandas agrega métricas
-  ↓
-Retriever recupera evidencia
-  ↓
-Bedrock explica resultados al usuario
-```
-
----
-
-## 11. Estructura del repositorio
+## Estructura del repositorio
 
 ```text
 financial_sentiment_radar_aws/
 ├── app/
 │   └── streamlit_app.py
-├── data/
-│   └── sample_tweets.csv
-├── docs/
-│   └── README_FINBERT_BEDROCK_IMPLEMENTACION.md
-├── infra/
-│   └── cloudformation/
-│       ├── 00_foundation.yml
-│       └── 01_fargate_streamlit.yml
-├── scripts/
-│   ├── 00_deploy_foundation.sh
-│   ├── 02_preflight_local.sh
-│   ├── 03_validate_cloudformation.sh
-│   ├── 04_local_smoke_test.sh
-│   ├── 06_build_push_app.sh
-│   ├── 07_deploy_ecs.sh
-│   ├── 08_smoke_test_cloud.sh
-│   ├── 09_print_outputs.sh
-│   └── 10_troubleshoot_ecs.sh
+│
 ├── src/
 │   └── financial_sentiment/
+│       ├── __init__.py
+│       ├── analytics.py
+│       ├── additive_refinements.py
 │       ├── bedrock.py
+│       ├── charts.py
 │       ├── config.py
-│       ├── finbert.py
+│       ├── live_query_catalog.py
+│       ├── live_ranking.py
+│       ├── live_relevance.py
+│       ├── live_search_service.py
+│       ├── medallion.py
+│       ├── multilingual_finbert.py
 │       ├── pipeline.py
-│       ├── preprocessing.py
+│       ├── query_anchor_filter.py
 │       ├── retrieval.py
 │       ├── schema_inference.py
-│       ├── sentiment.py
+│       ├── spanish_financial_overrides.py
 │       ├── storage.py
+│       ├── streamlit_live_tab.py
 │       ├── topics.py
+│       ├── x_api_client.py
 │       └── jobs/
 │           ├── __init__.py
-│           └── batch_process.py
+│           ├── batch_process.py
+│           └── live_twitter_ingest.py
+│
+├── infra/
+│   └── cloudformation/
+│       ├── 01_fargate_streamlit.yml
+│       └── 02_live_ingestion_athena.yml
+│
+├── scripts/
+│   ├── 06_build_push_app.sh
+│   ├── 07_deploy_ecs.sh
+│   ├── 09_print_outputs.sh
+│   ├── 11_deploy_live_ingestion_athena.sh
+│   ├── 12_create_aws_budget_100.sh
+│   ├── 13_backfill_twitter_live_from_bronze.py
+│   └── 14_reprocess_topics_and_spanish_overrides.py
+│
+├── sql/
+│   └── final_consultas_live_queries.sql
+│
+├── docs/
+│   ├── README_FINAL_CONSULTAS_LIVE_SEARCH.md
+│   ├── README_FINAL_PHASE_CONSULTAS_PREVIEW_FIX.md
+│   ├── README_FINAL_STABILITY_PATCH.md
+│   └── README_FINAL_ADDITIVE_REFINEMENTS.md
+│
 ├── tests/
-│   ├── test_finbert_interface.py
-│   ├── test_schema_inference.py
-│   └── ...
+│   ├── test_additive_refinements.py
+│   ├── test_final_consultas_query_catalog.py
+│   ├── test_final_live_query.py
+│   ├── test_final_live_search_limits.py
+│   ├── test_final_phase_live_query_fix.py
+│   ├── test_live_relevance.py
+│   └── test_topics_expanded.py
+│
 ├── Dockerfile
-├── pyproject.toml
 ├── requirements.txt
-├── README.md
-└── uv.lock
+├── requirements.docker.txt
+├── pyproject.toml
+├── uv.lock
+└── README.md
 ```
 
 ---
 
-## 12. Variables de entorno principales
+## Componentes principales del código
 
-### Configuración general
+### `app/streamlit_app.py`
+
+Punto de entrada de la app Streamlit. Coordina:
+
+- Layout principal.
+- Carga de configuración.
+- Upload de CSV/Parquet.
+- Procesamiento batch.
+- Tabs de resumen, consultas, temas, tweets live y datos batch.
+
+### `src/financial_sentiment/config.py`
+
+Carga configuración desde variables de entorno. Define parámetros como:
+
+- Bucket S3.
+- Backend local/S3.
+- Modelo Bedrock.
+- Flags de Bedrock.
+- Configuración de FinBERT.
+- Secret de X/Twitter.
+
+### `src/financial_sentiment/pipeline.py`
+
+Pipeline principal de procesamiento:
+
+```text
+raw dataframe
+→ limpieza / canonicalización
+→ detección de ticker
+→ sentimiento
+→ topics
+→ dataframe procesado
+```
+
+### `src/financial_sentiment/topics.py`
+
+Clasificación determinística de temas financieros. Tiene una taxonomía extendida para:
+
+- Calificación soberana.
+- Política monetaria.
+- Tipo de cambio.
+- Riesgo geopolítico.
+- Regulación/antitrust.
+- Energía/commodities.
+- Riesgo de crédito.
+- Sector bancario.
+- Earnings.
+- Mercado.
+- IA/chips.
+
+### `src/financial_sentiment/live_query_catalog.py`
+
+Catálogo de empresas, cuentas curadas y queries base para ingesta live. Contiene:
+
+- Cuentas financieras confiables.
+- Tickers monitoreados.
+- Alias de empresas.
+- Queries por ticker.
+- Fallbacks para búsqueda amplia.
+
+### `src/financial_sentiment/additive_refinements.py`
+
+Refinamiento determinístico de preguntas del usuario. Convierte preguntas naturales en búsquedas más financieras sin borrar anclas fuertes.
+
+Ejemplos:
+
+```text
+Qué se dice de México
+→ México + Banxico + peso + inflación + tasas + mercado
+
+Mexico Moody
+→ se conserva como Mexico Moody porque tiene anclas fuertes
+```
+
+### `src/financial_sentiment/query_anchor_filter.py`
+
+Filtro de anclas fuertes. Evita que una consulta con entidades específicas devuelva tweets genéricos.
+
+Ejemplo:
+
+```text
+Mexico Moody
+```
+
+requiere candidatos que preserven:
+
+```text
+Mexico/México + Moody + rating/calificación/downgrade/Baa3
+```
+
+Esto evita que la app responda con tweets de Banxico/tasas cuando el usuario preguntó por Moody.
+
+### `src/financial_sentiment/live_ranking.py`
+
+Ranking local de candidatos de X. Combina:
+
+- Interacción pública.
+- Fuente curada.
+- Relevancia financiera.
+- Penalización de ruido.
+
+El ranking ayuda, pero no permite que un tweet viral no financiero domine la respuesta.
+
+### `src/financial_sentiment/live_relevance.py`
+
+Filtro ruido/no ruido con Bedrock y fallback heurístico. Tiene parser tolerante para respuestas JSON de Bedrock aunque vengan con markdown, texto alrededor o estructuras parcialmente diferentes.
+
+### `src/financial_sentiment/multilingual_finbert.py`
+
+Wrapper que permite traducción selectiva antes de FinBERT:
+
+```text
+Texto en inglés
+→ FinBERT directo
+
+Texto financiero en español/otro idioma
+→ Bedrock traduce a inglés financiero breve
+→ FinBERT clasifica la traducción
+→ se conserva texto original
+```
+
+Guarda columnas de auditoría:
+
+```text
+original_text
+finbert_input_text
+translation_model
+translation_reason
+```
+
+### `src/financial_sentiment/spanish_financial_overrides.py`
+
+Overrides determinísticos para casos financieros claros en español, por ejemplo:
+
+```text
+Moody’s recorta calificación de México
+→ topic = sovereign_credit_rating
+→ sentiment = negative
+```
+
+### `src/financial_sentiment/x_api_client.py`
+
+Cliente para X/Twitter Recent Search API. Construye requests, normaliza respuestas y extrae campos útiles.
+
+### `src/financial_sentiment/medallion.py`
+
+Funciones para escribir JSON/Parquet en S3 bajo estructura Bronze/Silver/Gold.
+
+### `src/financial_sentiment/jobs/live_twitter_ingest.py`
+
+Job ejecutado por ECS Fargate para ingesta automática. Hace:
+
+```text
+X search por ticker
+→ Bronze JSON
+→ Bedrock relevance
+→ FinBERT
+→ Silver Parquet
+→ Gold agregados
+→ latest.parquet
+```
+
+### `src/financial_sentiment/jobs/batch_process.py`
+
+Job para procesamiento batch por CLI.
+
+### `scripts/13_backfill_twitter_live_from_bronze.py`
+
+Reprocesa objetos de Bronze que no llegaron a Silver/Gold debido a errores anteriores.
+
+### `scripts/14_reprocess_topics_and_spanish_overrides.py`
+
+Reprocesa topics y overrides sobre parquets ya existentes sin volver a consultar X.
+
+---
+
+## Instalación local
+
+### Requisitos
+
+- Python 3.12.
+- uv.
+- Docker.
+- AWS CLI configurado.
+- Credenciales AWS con permisos para S3, ECS, ECR, CloudFormation, Secrets Manager, Bedrock y CloudWatch Logs.
+- Bearer token de X/Twitter guardado en Secrets Manager.
+
+Instalar dependencias:
+
+```bash
+uv sync --all-groups
+```
+
+Activar entorno opcionalmente:
+
+```bash
+source .venv/bin/activate
+```
+
+---
+
+## Variables de entorno
+
+Variables principales:
 
 ```bash
 export AWS_REGION=us-east-1
-export DATA_BACKEND=local
-```
-
-Para S3:
-
-```bash
 export DATA_BACKEND=s3
-export APP_BUCKET=nombre-del-bucket
+export APP_BUCKET=financial-sentiment-radar-dev-foundatio-databucket-coafx0g9hqds
+export S3_BUCKET="$APP_BUCKET"
+export DATA_BUCKET="$APP_BUCKET"
 ```
 
-### Modelo de sentimiento
-
-Modo barato:
+Bedrock:
 
 ```bash
-export SENTIMENT_MODEL=lexicon
+export USE_BEDROCK=true
+export USE_BEDROCK_SCHEMA=true
+export USE_BEDROCK_RELEVANCE=true
+export USE_BEDROCK_TRANSLATION=true
+export BEDROCK_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0
+export BEDROCK_TRANSLATION_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0
+export BEDROCK_TRANSLATION_MAX_ROWS=25
 ```
 
-Modo FinBERT:
+FinBERT:
 
 ```bash
 export SENTIMENT_MODEL=finbert
@@ -551,467 +645,610 @@ export FINBERT_MODEL_NAME=ProsusAI/finbert
 export FINBERT_BATCH_SIZE=16
 ```
 
-### Bedrock
-
-Desactivado:
+X/Twitter:
 
 ```bash
-export USE_BEDROCK=false
-export USE_BEDROCK_SCHEMA=false
+export TWITTER_BEARER_SECRET_ARN=$(aws secretsmanager describe-secret \
+  --region us-east-1 \
+  --secret-id financial-sentiment-radar/twitter-bearer \
+  --query ARN \
+  --output text)
 ```
 
-Activado:
+Para pruebas locales directas:
 
 ```bash
-export USE_BEDROCK=true
-export USE_BEDROCK_SCHEMA=true
-export BEDROCK_MODEL_ID=amazon.titan-text-lite-v1
+export TWITTER_BEARER=$(aws secretsmanager get-secret-value \
+  --region us-east-1 \
+  --secret-id financial-sentiment-radar/twitter-bearer \
+  --query SecretString \
+  --output text)
 ```
 
 ---
 
-## 13. Instalación local
-
-### 13.1 Sincronizar ambiente
+## Ejecución local
 
 ```bash
-uv sync --all-groups
+PYTHONPATH=src uv run streamlit run app/streamlit_app.py
 ```
 
-### 13.2 Ejecutar pruebas
+Si se quiere probar solo el pipeline de búsqueda live sin ingestar a S3:
+
+```bash
+PYTHONPATH=src \
+USE_BEDROCK_RELEVANCE=true \
+USE_BEDROCK_TRANSLATION=true \
+BEDROCK_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0 \
+BEDROCK_TRANSLATION_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0 \
+AWS_REGION=us-east-1 \
+uv run python - <<'PY'
+import os
+from financial_sentiment.live_search_service import preview_direct_live_search
+
+preview = preview_direct_live_search(
+    user_query="Mexico Moody credit rating Baa3",
+    bearer_token=os.environ["TWITTER_BEARER"],
+    region_name="us-east-1",
+    max_results=5,
+    sentiment_model="finbert",
+    finbert_model_name="ProsusAI/finbert",
+    finbert_batch_size=16,
+    use_bedrock=True,
+    bedrock_model_id=os.environ["BEDROCK_MODEL_ID"],
+    language="auto",
+    sort_order="relevancy",
+    search_scope="broad_all_x",
+)
+
+print("rows_requested:", preview.rows_requested)
+print("rows_raw:", preview.rows_raw)
+print("rows_relevant:", preview.rows_relevant)
+print("warning:", preview.warning)
+print("query:\n", preview.query)
+print(preview.summary)
+PY
+```
+
+---
+
+## Pruebas, linting y formato
+
+Ejecutar todas las pruebas:
 
 ```bash
 PYTHONPATH=src uv run pytest -q
 ```
 
-Resultado esperado:
-
-```text
-14 passed
-```
-
-### 13.3 Revisar estilo
+Aplicar ruff autofix:
 
 ```bash
-uv run ruff check .
+uv run ruff check . --fix
+```
+
+Formatear:
+
+```bash
 uv run ruff format .
 ```
 
----
-
-## 14. Correr la app localmente
-
-### 14.1 Modo default con modelo léxico
+Validación final:
 
 ```bash
-export SENTIMENT_MODEL=lexicon
-export USE_BEDROCK=false
-export USE_BEDROCK_SCHEMA=false
-
-PYTHONPATH=src uv run streamlit run app/streamlit_app.py
+uv run ruff check .
 ```
 
-Abrir:
-
-```text
-http://localhost:8501
-```
-
----
-
-### 14.2 Modo FinBERT local
+Comando completo recomendado antes de commit:
 
 ```bash
-export SENTIMENT_MODEL=finbert
-export FINBERT_MODEL_NAME=ProsusAI/finbert
-export FINBERT_BATCH_SIZE=16
-export USE_BEDROCK=false
-export USE_BEDROCK_SCHEMA=false
-
-PYTHONPATH=src uv run streamlit run app/streamlit_app.py
-```
-
-La primera ejecución puede tardar porque descarga el modelo desde Hugging Face.
-
----
-
-### 14.3 Modo Bedrock local
-
-Primero se debe tener AWS CLI configurado:
-
-```bash
-aws sts get-caller-identity
-```
-
-Luego:
-
-```bash
-export AWS_REGION=us-east-1
-export USE_BEDROCK=true
-export USE_BEDROCK_SCHEMA=true
-export BEDROCK_MODEL_ID=amazon.titan-text-lite-v1
-
-PYTHONPATH=src uv run streamlit run app/streamlit_app.py
-```
-
-El modelo debe estar habilitado en Amazon Bedrock desde AWS Console.
-
----
-
-## 15. Job batch por terminal
-
-El proyecto incluye un job batch ejecutable.
-
-Archivo:
-
-```text
-src/financial_sentiment/jobs/batch_process.py
-```
-
-Ejemplo local:
-
-```bash
-PYTHONPATH=src uv run python -m financial_sentiment.jobs.batch_process \
-  --input-path data/sample_tweets.csv \
-  --output-path data/processed/sample_processed.parquet \
-  --sentiment-model lexicon
-```
-
-Ejemplo con S3:
-
-```bash
-PYTHONPATH=src uv run python -m financial_sentiment.jobs.batch_process \
-  --input-path s3://TU_BUCKET/raw/tweets/dataset.parquet \
-  --output-path s3://TU_BUCKET/processed/tweets/dataset_processed.parquet \
-  --use-bedrock-schema \
-  --sentiment-model finbert \
-  --aws-region us-east-1 \
-  --bedrock-model-id amazon.titan-text-lite-v1 \
-  --finbert-model-name ProsusAI/finbert \
-  --finbert-batch-size 16
-```
-
----
-
-## 16. Despliegue en AWS
-
-### 16.1 Variables base
-
-```bash
-export PROJECT_NAME=financial-sentiment-radar
-export ENVIRONMENT=dev
-export AWS_REGION=us-east-1
-```
-
-### 16.2 Desplegar foundation
-
-```bash
-./scripts/00_deploy_foundation.sh
-source config/generated.env
-```
-
-Esto crea:
-
-- Bucket S3.
-- Repositorio ECR.
-- Archivo `config/generated.env`.
-
----
-
-### 16.3 Construir y subir imagen a ECR
-
-```bash
-./scripts/06_build_push_app.sh
-```
-
-Este script usa:
-
-```bash
-docker buildx build --platform linux/amd64
-```
-
-Esto es necesario para evitar errores de arquitectura en Fargate.
-
----
-
-### 16.4 Desplegar app con modelo léxico
-
-Recomendado para primer despliegue porque es más rápido y barato.
-
-```bash
-export SENTIMENT_MODEL=lexicon
-export USE_BEDROCK=false
-export USE_BEDROCK_SCHEMA=false
-export TASK_CPU=512
-export TASK_MEMORY=1024
-
-./scripts/07_deploy_ecs.sh
-./scripts/09_print_outputs.sh
-```
-
----
-
-### 16.5 Desplegar app con FinBERT
-
-```bash
-export SENTIMENT_MODEL=finbert
-export FINBERT_MODEL_NAME=ProsusAI/finbert
-export FINBERT_BATCH_SIZE=16
-
-export USE_BEDROCK=false
-export USE_BEDROCK_SCHEMA=false
-
-export TASK_CPU=1024
-export TASK_MEMORY=4096
-
-./scripts/06_build_push_app.sh
-./scripts/07_deploy_ecs.sh
-./scripts/09_print_outputs.sh
-```
-
----
-
-### 16.6 Desplegar app con FinBERT + Bedrock
-
-```bash
-export SENTIMENT_MODEL=finbert
-export FINBERT_MODEL_NAME=ProsusAI/finbert
-export FINBERT_BATCH_SIZE=16
-
-export USE_BEDROCK=true
-export USE_BEDROCK_SCHEMA=true
-export BEDROCK_MODEL_ID=amazon.titan-text-lite-v1
-
-export TASK_CPU=1024
-export TASK_MEMORY=4096
-
-./scripts/06_build_push_app.sh
-./scripts/07_deploy_ecs.sh
-./scripts/09_print_outputs.sh
-```
-
----
-
-## 17. Validar app en AWS
-
-Obtener URL:
-
-```bash
-./scripts/09_print_outputs.sh
-```
-
-Smoke test:
-
-```bash
-./scripts/08_smoke_test_cloud.sh
-```
-
-Revisar logs:
-
-```bash
-aws logs tail "/ecs/financial-sentiment-radar-dev" \
-  --region us-east-1 \
-  --since 30m
-```
-
-Revisar estado ECS:
-
-```bash
-aws ecs describe-services \
-  --region us-east-1 \
-  --cluster financial-sentiment-radar-dev-cluster \
-  --services financial-sentiment-radar-dev-service \
-  --query "services[0].events[0:10].[createdAt,message]" \
-  --output json
-```
-
-Revisar target group:
-
-```bash
-TG_ARN=$(aws elbv2 describe-target-groups \
-  --region us-east-1 \
-  --query "TargetGroups[?contains(TargetGroupName, 'financ')].TargetGroupArn | [0]" \
-  --output text)
-
-aws elbv2 describe-target-health \
-  --region us-east-1 \
-  --target-group-arn "$TG_ARN" \
-  --output json
-```
-
----
-
-## 18. Errores comunes
-
-### 18.1 Imagen incompatible con Fargate
-
-Error:
-
-```text
-image Manifest does not contain descriptor matching platform 'linux/amd64'
-```
-
-Solución:
-
-```bash
-docker buildx build --platform linux/amd64 -t "${IMAGE_URI}" --push .
-```
-
-Ya está incorporado en:
-
-```text
-scripts/06_build_push_app.sh
-```
-
----
-
-### 18.2 FinBERT consume demasiada memoria
-
-Síntoma:
-
-```text
-Task stopped
-OutOfMemoryError
-Container killed
-```
-
-Solución:
-
-```bash
-export TASK_CPU=1024
-export TASK_MEMORY=4096
-./scripts/07_deploy_ecs.sh
-```
-
----
-
-### 18.3 Bedrock no responde
-
-Posibles causas:
-
-- El modelo no está habilitado en la consola de Bedrock.
-- La región no coincide.
-- La task role no tiene permiso `bedrock:InvokeModel`.
-- `USE_BEDROCK=true` pero `BEDROCK_MODEL_ID` no existe en la región.
-
-Prueba:
-
-```bash
-aws bedrock list-foundation-models --region us-east-1
-```
-
----
-
-### 18.4 La app no carga archivos
-
-Revisar:
-
-- Que el archivo sea CSV o Parquet.
-- Que no esté corrupto.
-- Que tenga al menos una columna textual.
-- Que el archivo no sea demasiado grande para la memoria de la task.
-
----
-
-## 19. Costos y trade-offs
-
-### Modelo léxico
-
-Más barato y rápido.
-
-Recomendado para:
-
-- Pruebas.
-- Demos.
-- Validación inicial.
-- Bajo costo.
-
-### FinBERT
-
-Más preciso, pero más costoso.
-
-Recomendado para:
-
-- Producto más serio.
-- Clasificación financiera con mejor contexto.
-- Archivos batch medianos.
-
-### Bedrock
-
-Útil para:
-
-- Explicar resultados.
-- Responder preguntas.
-- Inferir esquemas ambiguos.
-
-No se recomienda mandar todos los tweets a Bedrock. Es mejor mandar evidencia resumida o muestras pequeñas.
-
----
-
-## 20. Comandos de desarrollo recomendados
-
-Antes de cada commit:
-
-```bash
-uv sync --all-groups
 PYTHONPATH=src uv run pytest -q
 uv run ruff check . --fix
 uv run ruff format .
 uv run ruff check .
 ```
 
-Commit:
-
-```bash
-git status --short
-git add -A app src tests infra scripts docs
-git add Dockerfile README.md README_PROYECTO.md pyproject.toml requirements.txt uv.lock
-git commit -m "Update project documentation and FinBERT Bedrock pipeline"
-git push
-```
-
-No usar `git add .` si no estás completamente seguro de qué archivos se van a subir.
-
 ---
 
-## 21. Archivos que no deben subirse
+## Docker
 
-No subir:
+El proyecto usa dos archivos de dependencias:
 
 ```text
-.env
-.env.local
-config/generated.env
-.venv/
-__pycache__/
-.pytest_cache/
-.ruff_cache/
-.DS_Store
-*.pem
-*.key
-data/schema-mappings/
-data/raw/
-data/processed/
+requirements.txt          # entorno general/local
+requirements.docker.txt   # Docker/Fargate con torch CPU-only
+```
+
+La imagen Docker usa PyTorch CPU-only para evitar dependencias CUDA/NVIDIA en Fargate.
+
+Construir y subir a ECR:
+
+```bash
+./scripts/06_build_push_app.sh
+```
+
+Validar dentro de Docker:
+
+```bash
+docker run --rm \
+  --platform linux/amd64 \
+  --entrypoint python \
+  financial-sentiment-radar:debug \
+  -c "import torch; print(torch.__version__)"
+```
+
+Debe mostrar una versión CPU compatible, por ejemplo:
+
+```text
+2.6.0+cpu
 ```
 
 ---
 
-## 22. Resumen ejecutivo
+## Despliegue en AWS
 
-Este proyecto implementa un producto de datos financiero en AWS. La aplicación permite cargar archivos con tweets o textos financieros, detectar automáticamente la columna de texto, clasificar sentimiento, generar métricas por empresa y responder preguntas del usuario con evidencia.
+### App Streamlit en ECS Fargate
 
-La arquitectura usa:
+```bash
+source config/generated.env
 
-- Streamlit para la interfaz.
-- Python para el pipeline analítico.
-- FinBERT para sentimiento financiero.
-- Bedrock para razonamiento y explicación.
-- S3 para almacenamiento.
-- ECR para imágenes Docker.
-- ECS Fargate para ejecución.
-- ALB para exposición pública.
-- CloudWatch para logs.
-- IAM para permisos seguros.
-- CloudFormation para infraestructura reproducible.
+export DATA_BACKEND=s3
+export APP_BUCKET=financial-sentiment-radar-dev-foundatio-databucket-coafx0g9hqds
+export S3_BUCKET="$APP_BUCKET"
+export DATA_BUCKET="$APP_BUCKET"
 
-La solución está diseñada como MVP escalable: por default usa un clasificador léxico barato, pero puede activar FinBERT y Bedrock cuando se requiera mayor capacidad analítica.
+export TWITTER_BEARER_SECRET_ARN=$(aws secretsmanager describe-secret \
+  --region us-east-1 \
+  --secret-id financial-sentiment-radar/twitter-bearer \
+  --query ARN \
+  --output text)
+
+export SENTIMENT_MODEL=finbert
+export FINBERT_MODEL_NAME=ProsusAI/finbert
+export FINBERT_BATCH_SIZE=16
+
+export USE_BEDROCK=true
+export USE_BEDROCK_SCHEMA=true
+export USE_BEDROCK_RELEVANCE=true
+export USE_BEDROCK_TRANSLATION=true
+export BEDROCK_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0
+export BEDROCK_TRANSLATION_MODEL_ID=us.anthropic.claude-haiku-4-5-20251001-v1:0
+export BEDROCK_TRANSLATION_MAX_ROWS=25
+
+export TASK_CPU=1024
+export TASK_MEMORY=4096
+
+./scripts/06_build_push_app.sh
+./scripts/07_deploy_ecs.sh
+./scripts/09_print_outputs.sh
+```
+
+Si CloudFormation indica `No changes to deploy` pero la imagen fue actualizada con el mismo tag, forzar nueva task:
+
+```bash
+aws ecs update-service \
+  --region us-east-1 \
+  --cluster financial-sentiment-radar-dev-cluster \
+  --service financial-sentiment-radar-dev-service \
+  --force-new-deployment
+
+aws ecs wait services-stable \
+  --region us-east-1 \
+  --cluster financial-sentiment-radar-dev-cluster \
+  --services financial-sentiment-radar-dev-service
+```
+
+---
+
+## Ingesta live programada
+
+Despliegue de ingesta live + Athena/Glue:
+
+```bash
+./scripts/11_deploy_live_ingestion_athena.sh
+```
+
+La ingesta programada corre cada 2 horas mediante EventBridge Scheduler y ejecuta una task Fargate.
+
+Validar scheduler:
+
+```bash
+aws scheduler get-schedule \
+  --region us-east-1 \
+  --name financial-sentiment-radar-dev-twitter-live-every-2h \
+  --group-name default \
+  --output json
+```
+
+Validar logs:
+
+```bash
+aws logs tail "/ecs/financial-sentiment-radar-dev-live-ingestion" \
+  --region us-east-1 \
+  --since 12h
+```
+
+Ejecución manual de la task:
+
+```bash
+export SUBNETS=$(aws ecs describe-services \
+  --region us-east-1 \
+  --cluster financial-sentiment-radar-dev-cluster \
+  --services financial-sentiment-radar-dev-service \
+  --query "services[0].networkConfiguration.awsvpcConfiguration.subnets" \
+  --output text | tr '\t' ',')
+
+export SG=$(aws ecs describe-services \
+  --region us-east-1 \
+  --cluster financial-sentiment-radar-dev-cluster \
+  --services financial-sentiment-radar-dev-service \
+  --query "services[0].networkConfiguration.awsvpcConfiguration.securityGroups[0]" \
+  --output text)
+
+TASK_ARN=$(aws ecs run-task \
+  --region us-east-1 \
+  --cluster financial-sentiment-radar-dev-cluster \
+  --launch-type FARGATE \
+  --task-definition financial-sentiment-radar-dev-live-ingestion-task \
+  --network-configuration "awsvpcConfiguration={subnets=[$SUBNETS],securityGroups=[$SG],assignPublicIp=ENABLED}" \
+  --query "tasks[0].taskArn" \
+  --output text)
+
+echo "$TASK_ARN"
+```
+
+Revisar resultado:
+
+```bash
+sleep 180
+
+aws ecs describe-tasks \
+  --region us-east-1 \
+  --cluster financial-sentiment-radar-dev-cluster \
+  --tasks "$TASK_ARN" \
+  --query "tasks[0].[lastStatus,stoppedReason,containers[0].exitCode,containers[0].reason]" \
+  --output json
+```
+
+---
+
+## Búsqueda live manual con Bedrock
+
+La búsqueda manual se controla principalmente por:
+
+```text
+src/financial_sentiment/live_search_service.py
+src/financial_sentiment/additive_refinements.py
+src/financial_sentiment/query_anchor_filter.py
+src/financial_sentiment/live_ranking.py
+src/financial_sentiment/live_relevance.py
+```
+
+Flujo:
+
+1. El usuario escribe una pregunta.
+2. El refinador conserva anclas fuertes.
+3. Si hay entidades fuertes, se construye una query precisa.
+4. X API busca candidatos.
+5. El ranking local ordena candidatos.
+6. El filtro de anclas elimina candidatos que no respetan entidades clave.
+7. Bedrock etiqueta ruido/no ruido.
+8. FinBERT clasifica sentimiento.
+9. Se muestra preview.
+10. El usuario decide si ingestar.
+
+Ejemplos recomendados para validar:
+
+```text
+Mexico Moody credit rating Baa3
+Google antitrust DOJ
+Banxico tasa inflación
+Nvidia earnings guidance
+oil Middle East risk
+```
+
+---
+
+## Medallion: Bronze, Silver y Gold
+
+### Bronze
+
+Contiene respuestas raw de X en JSON.
+
+```text
+bronze/twitter_live/ingestion_date=YYYY-MM-DD/<run_id>.json
+```
+
+Uso:
+
+- Auditoría.
+- Reprocesamiento.
+- Diagnóstico cuando falla Silver/Gold.
+
+### Silver
+
+Contiene tweets normalizados y enriquecidos.
+
+```text
+silver/tweets/source=twitter_live/ingestion_date=YYYY-MM-DD/<run_id>.parquet
+```
+
+Columnas típicas:
+
+```text
+tweet_id
+created_at
+author_username
+text
+clean_text
+query_ticker
+primary_ticker
+sentiment
+sentiment_confidence
+topic
+is_noise
+relevance_score
+finbert_input_text
+translation_model
+translation_reason
+```
+
+### Gold
+
+Agregados analíticos por ticker/sentimiento:
+
+```text
+gold/sentiment_by_ticker_daily/source=twitter_live/ingestion_date=YYYY-MM-DD/<run_id>.parquet
+```
+
+Latest live para la app:
+
+```text
+gold/twitter_live/latest.parquet
+```
+
+---
+
+## Reprocesamiento y backfills
+
+### Backfill desde Bronze
+
+Si una ingesta llegó a Bronze pero falló antes de Silver/Gold:
+
+```bash
+PYTHONPATH=src uv run python scripts/13_backfill_twitter_live_from_bronze.py \
+  --bucket "$APP_BUCKET" \
+  --start-date 2026-05-22
+```
+
+Modo prueba:
+
+```bash
+PYTHONPATH=src uv run python scripts/13_backfill_twitter_live_from_bronze.py \
+  --bucket "$APP_BUCKET" \
+  --start-date 2026-05-22 \
+  --dry-run
+```
+
+### Reprocesar topics y overrides
+
+```bash
+PYTHONPATH=src uv run python scripts/14_reprocess_topics_and_spanish_overrides.py \
+  --bucket "$APP_BUCKET"
+```
+
+Modo prueba:
+
+```bash
+PYTHONPATH=src uv run python scripts/14_reprocess_topics_and_spanish_overrides.py \
+  --bucket "$APP_BUCKET" \
+  --dry-run
+```
+
+---
+
+## Athena y Glue Catalog
+
+La plantilla:
+
+```text
+infra/cloudformation/02_live_ingestion_athena.yml
+```
+
+crea recursos para Glue/Athena, incluyendo tablas sobre capas Silver y Gold.
+
+Tablas principales:
+
+```text
+silver_tweets
+gold_sentiment_by_ticker_daily
+```
+
+SQL de apoyo:
+
+```text
+sql/final_consultas_live_queries.sql
+```
+
+Ejemplos de análisis posibles:
+
+- Sentimiento por ticker y día.
+- Conteo de tweets por fuente.
+- Evolución de sentimiento negativo.
+- Topics con mayor concentración negativa.
+- Tweets live por `source=twitter_live`.
+
+---
+
+## Monitoreo y validación operativa
+
+### App Streamlit
+
+```bash
+aws logs tail "/ecs/financial-sentiment-radar-dev" \
+  --region us-east-1 \
+  --since 30m
+```
+
+### Ingesta live
+
+```bash
+aws logs tail "/ecs/financial-sentiment-radar-dev-live-ingestion" \
+  --region us-east-1 \
+  --since 30m
+```
+
+### Ver si latest live se actualizó
+
+```bash
+aws s3 ls "s3://$APP_BUCKET/gold/twitter_live/latest.parquet"
+```
+
+### Ver últimas escrituras Medallion
+
+```bash
+aws s3 ls "s3://$APP_BUCKET/bronze/twitter_live/" --recursive | tail -10
+aws s3 ls "s3://$APP_BUCKET/silver/tweets/source=twitter_live/" --recursive | tail -10
+aws s3 ls "s3://$APP_BUCKET/gold/sentiment_by_ticker_daily/source=twitter_live/" --recursive | tail -10
+aws s3 ls "s3://$APP_BUCKET/gold/twitter_live/" --recursive
+```
+
+### Ver deployment ECS
+
+```bash
+aws ecs describe-services \
+  --region us-east-1 \
+  --cluster financial-sentiment-radar-dev-cluster \
+  --services financial-sentiment-radar-dev-service \
+  --query "services[0].deployments[*].[status,taskDefinition,createdAt,updatedAt,runningCount,desiredCount]" \
+  --output table
+```
+
+---
+
+## Seguridad y costos
+
+### Seguridad
+
+- No guardar secrets en Git.
+- El bearer token de X/Twitter debe vivir en AWS Secrets Manager.
+- Las tareas ECS deben usar IAM roles con permisos mínimos.
+- Bedrock debe invocarse con modelo permitido por la cuenta.
+- No subir archivos `.env`, `.pem`, `.key`, `config/generated.env` ni backups `.bak`.
+
+Revisión antes de commit:
+
+```bash
+git status --short | grep -E "generated.env|\.env|\.pem|\.key|\.bak|bak_additive|__pycache__|\.DS_Store"
+```
+
+### Costos
+
+El diseño controla costos mediante:
+
+- Ingesta programada limitada a pocos tweets por corrida.
+- Búsqueda manual con candidate pool conservador.
+- Filtro de anclas antes de Bedrock/FinBERT.
+- Traducción selectiva, no traducción de todos los textos.
+- Bedrock Haiku para bajo costo/latencia.
+- Uso de Fargate con CPU y memoria acotadas.
+- PyTorch CPU-only en Docker.
+
+---
+
+## Documentos importantes
+
+Documentos del proyecto:
+
+```text
+docs/README_FINAL_CONSULTAS_LIVE_SEARCH.md
+```
+
+Explica la fase de búsqueda live y consultas con Bedrock.
+
+```text
+docs/README_FINAL_PHASE_CONSULTAS_PREVIEW_FIX.md
+```
+
+Explica correcciones sobre preview, ruido y flujo antes de ingestar.
+
+```text
+docs/README_FINAL_STABILITY_PATCH.md
+```
+
+Notas sobre estabilización de Docker, Torch, Bedrock y ECS.
+
+```text
+docs/README_FINAL_ADDITIVE_REFINEMENTS.md
+```
+
+Notas sobre refinamientos aditivos: cuentas, tickers, topics y queries.
+
+Scripts operativos:
+
+```text
+scripts/06_build_push_app.sh
+scripts/07_deploy_ecs.sh
+scripts/09_print_outputs.sh
+scripts/11_deploy_live_ingestion_athena.sh
+scripts/13_backfill_twitter_live_from_bronze.py
+scripts/14_reprocess_topics_and_spanish_overrides.py
+```
+
+Infraestructura:
+
+```text
+infra/cloudformation/01_fargate_streamlit.yml
+infra/cloudformation/02_live_ingestion_athena.yml
+```
+
+---
+
+## Referencias
+
+- X API Recent Search: https://docs.x.com/x-api/posts/search-recent-posts
+- X API Recent Search Quickstart: https://docs.x.com/x-api/posts/search/quickstart/recent-search
+- X API Fields / public metrics: https://docs.x.com/x-api/fundamentals/fields
+- Amazon Bedrock inference profiles: https://docs.aws.amazon.com/bedrock/latest/userguide/inference-profiles-support.html
+- Amazon Bedrock Claude Messages API parameters: https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages-request-response.html
+- Claude on Amazon Bedrock: https://platform.claude.com/docs/en/build-with-claude/claude-in-amazon-bedrock
+- Streamlit documentation: https://docs.streamlit.io/
+- Streamlit CLI run: https://docs.streamlit.io/develop/api-reference/cli/run
+- uv documentation: https://docs.astral.sh/uv/
+- uv installation: https://docs.astral.sh/uv/getting-started/installation/
+- FinBERT model reference: https://huggingface.co/ProsusAI/finbert
+- AWS ECS/Fargate documentation: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/AWS_Fargate.html
+- AWS Glue Data Catalog: https://docs.aws.amazon.com/glue/latest/dg/catalog-and-crawler.html
+- Amazon Athena: https://docs.aws.amazon.com/athena/latest/ug/what-is.html
+
+---
+
+## Licencia
+
+Este repositorio es un proyecto académico para el curso de Arquitectura de Productos de Datos y Métodos de Gran Escala. Si se desea publicarlo como producto reutilizable, se recomienda agregar una licencia explícita, por ejemplo MIT, Apache 2.0 o una licencia privada institucional.
+
+---
+
+## Checklist antes de entregar
+
+```bash
+PYTHONPATH=src uv run pytest -q
+uv run ruff check . --fix
+uv run ruff format .
+uv run ruff check .
+```
+
+Verificar que no hay secretos:
+
+```bash
+git status --short | grep -E "generated.env|\.env|\.pem|\.key|\.bak|bak_additive|__pycache__|\.DS_Store"
+```
+
+Commit sugerido:
+
+```bash
+git add app src tests infra scripts docs sql Dockerfile requirements.txt requirements.docker.txt pyproject.toml uv.lock README.md
+
+git commit -m "Finalize Financial Sentiment Radar AWS product"
+
+git push
+```

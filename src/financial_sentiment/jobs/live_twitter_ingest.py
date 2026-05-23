@@ -27,7 +27,7 @@ from financial_sentiment.medallion import (
     write_medallion_datasets,
     write_twitter_bronze,
 )
-from financial_sentiment.pipeline import process_tweets
+from financial_sentiment.multilingual_finbert import process_tweets_with_optional_translation
 from financial_sentiment.x_api_client import flatten_recent_search_response, search_recent_posts
 
 logging.basicConfig(
@@ -168,7 +168,7 @@ def run_live_ingestion(args: argparse.Namespace) -> dict[str, str | int | None]:
             "latest_uri": None,
         }
 
-    processed = process_tweets(
+    processed = process_tweets_with_optional_translation(
         relevant_df,
         sentiment_model=args.sentiment_model,
         finbert_model_name=args.finbert_model_name,
