@@ -68,10 +68,12 @@ def _read_parquet_if_exists(bucket: str, key: str, region_name: str) -> pd.DataF
     s3 = boto3.client("s3", region_name=region_name)
     try:
         obj = s3.get_object(Bucket=bucket, Key=key)
-    except s3.exceptions.NoSuchKey:
-        return pd.DataFrame()
     except Exception as exc:
-        if getattr(exc, "response", {}).get("Error", {}).get("Code") in {"NoSuchKey", "404"}:
+        if getattr(exc, "response", {}).get("Error", {}).get("Code") in {
+            "NoSuchKey",
+            "404",
+            "NotFound",
+        }:
             return pd.DataFrame()
         raise
     return pd.read_parquet(io.BytesIO(obj["Body"].read()))
@@ -108,6 +110,9 @@ def silverize_tweets(
         "clean_text": "",
         "author_id": None,
         "author_username": None,
+        "author_name": None,
+        "author_verified": None,
+        "author_followers": None,
         "lang": None,
         "query_ticker": None,
         "query_name": None,
@@ -119,6 +124,16 @@ def silverize_tweets(
         "negative_prob": None,
         "sentiment_model": None,
         "topic": None,
+        "is_noise": False,
+        "relevance_score": None,
+        "noise_reason": None,
+        "live_search_query": None,
+        "x_query": None,
+        "search_mode": None,
+        "like_count": None,
+        "retweet_count": None,
+        "reply_count": None,
+        "quote_count": None,
     }
     for column, default in expected_defaults.items():
         if column not in silver.columns:
@@ -164,6 +179,7 @@ def gold_sentiment_by_ticker_daily(silver: pd.DataFrame) -> pd.DataFrame:
 
     pivot["total"] = pivot[["positive", "neutral", "negative"]].sum(axis=1)
     pivot["pos_ratio"] = pivot["positive"] / pivot["total"].where(pivot["total"].ne(0), 1)
+    pivot["neu_ratio"] = pivot["neutral"] / pivot["total"].where(pivot["total"].ne(0), 1)
     pivot["neg_ratio"] = pivot["negative"] / pivot["total"].where(pivot["total"].ne(0), 1)
     pivot["ingestion_time"] = now_utc().isoformat()
     pivot["ingestion_date"] = utc_date_string()

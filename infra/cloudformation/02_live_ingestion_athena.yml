@@ -32,11 +32,18 @@ Parameters:
     Default: 10
   LiveTickers:
     Type: String
-    Default: NVDA,TSLA,AAPL,GOOGL,MSFT,AMZN,JPM,BBVA
+    Default: NVDA,TSLA,AAPL,GOOGL,MSFT,AMZN,JPM,BBVA,META,AMD,AVGO,INTC,NFLX,ORCL,BAC,GS,WMT,DIS
   SentimentModel:
     Type: String
     Default: finbert
     AllowedValues: [lexicon, finbert]
+  UseBedrockRelevance:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+  BedrockModelId:
+    Type: String
+    Default: us.anthropic.claude-3-5-haiku-20241022-v1:0
   FinbertModelName:
     Type: String
     Default: ProsusAI/finbert
@@ -151,6 +158,12 @@ Resources:
               Value: 'true'
             - Name: SENTIMENT_MODEL
               Value: !Ref SentimentModel
+            - Name: USE_BEDROCK_RELEVANCE
+              Value: !Ref UseBedrockRelevance
+            - Name: USE_BEDROCK
+              Value: !Ref UseBedrockRelevance
+            - Name: BEDROCK_MODEL_ID
+              Value: !Ref BedrockModelId
             - Name: FINBERT_MODEL_NAME
               Value: !Ref FinbertModelName
             - Name: FINBERT_BATCH_SIZE
@@ -285,6 +298,26 @@ Resources:
               Type: string
             - Name: topic
               Type: string
+            - Name: is_noise
+              Type: boolean
+            - Name: relevance_score
+              Type: double
+            - Name: noise_reason
+              Type: string
+            - Name: live_search_query
+              Type: string
+            - Name: x_query
+              Type: string
+            - Name: search_mode
+              Type: string
+            - Name: like_count
+              Type: bigint
+            - Name: retweet_count
+              Type: bigint
+            - Name: reply_count
+              Type: bigint
+            - Name: quote_count
+              Type: bigint
             - Name: run_id
               Type: string
             - Name: raw_s3_uri
@@ -334,6 +367,8 @@ Resources:
             - Name: pos_ratio
               Type: double
             - Name: neg_ratio
+              Type: double
+            - Name: neu_ratio
               Type: double
             - Name: run_id
               Type: string

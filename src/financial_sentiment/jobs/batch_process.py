@@ -172,7 +172,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input-path", required=True)
     parser.add_argument("--output-path", required=True)
     parser.add_argument("--use-bedrock-schema", action="store_true")
-    parser.add_argument("--bedrock-model-id", default="amazon.titan-text-lite-v1")
+    parser.add_argument("--bedrock-model-id", default="us.anthropic.claude-3-5-haiku-20241022-v1:0")
     parser.add_argument("--aws-region", default="us-east-1")
     parser.add_argument("--sentiment-model", choices=["lexicon", "finbert"], default="lexicon")
     parser.add_argument("--finbert-model-name", default="ProsusAI/finbert")

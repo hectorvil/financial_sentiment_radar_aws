@@ -433,7 +433,7 @@ def _invoke_bedrock_text(prompt: str, model_id: str, region_name: str) -> str:
 def infer_schema_with_bedrock(
     df: pd.DataFrame,
     *,
-    model_id: str = "amazon.titan-text-lite-v1",
+    model_id: str = "us.anthropic.claude-3-5-haiku-20241022-v1:0",
     region_name: str = "us-east-1",
 ) -> SchemaMapping:
     """Ask Bedrock to identify the tweet-text column.
@@ -503,7 +503,7 @@ def infer_schema(
     df: pd.DataFrame,
     *,
     use_bedrock: bool,
-    model_id: str = "amazon.titan-text-lite-v1",
+    model_id: str = "us.anthropic.claude-3-5-haiku-20241022-v1:0",
     region_name: str = "us-east-1",
 ) -> SchemaMapping:
     """Infer schema with rules first and optional Bedrock fallback."""
