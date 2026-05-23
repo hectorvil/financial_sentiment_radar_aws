@@ -50,6 +50,14 @@ El producto está pensado como un MVP de monitoreo financiero y reputacional par
 
 ---
 
+## Demo pública desplegada
+
+Aplicación Streamlit desplegada en AWS ECS Fargate:
+
+http://financ-LoadB-LkstQiVdgd08-2040320807.us-east-1.elb.amazonaws.com
+
+---
+
 ## Qué problema resuelve
 
 Las redes sociales contienen señales útiles para mercados financieros, reputación corporativa y eventos macroeconómicos, pero también contienen mucho ruido: memes, política no financiera, spam, posts virales sin relación con inversión, duplicados o lenguaje ambiguo.
@@ -1223,6 +1231,20 @@ infra/cloudformation/02_live_ingestion_athena.yml
 - AWS ECS/Fargate documentation: https://docs.aws.amazon.com/AmazonECS/latest/developerguide/AWS_Fargate.html
 - AWS Glue Data Catalog: https://docs.aws.amazon.com/glue/latest/dg/catalog-and-crawler.html
 - Amazon Athena: https://docs.aws.amazon.com/athena/latest/ug/what-is.html
+
+---
+
+## Uso de herramientas de AI en el proyecto
+
+Durante el desarrollo del proyecto se utilizaron herramientas de inteligencia artificial principalmente como apoyo para consulta, redacción técnica, debugging y organización de documentación.
+
+En particular, se utilizaron modelos de lenguaje para:
+- apoyo en redacción y estructura del README,
+- revisión y corrección de errores técnicos,
+- apoyo en documentación y explicaciones técnicas,
+- generación inicial de ideas de arquitectura y despliegue.
+
+Sin embargo, el diseño del producto, integración de servicios AWS, lógica de procesamiento, arquitectura de datos, implementación de la aplicación Streamlit, configuración de infraestructura y decisiones técnicas finales fueron desarrolladas por el equipo.
 
 ---
 
