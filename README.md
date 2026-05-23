@@ -80,6 +80,10 @@ La siguiente figura resume el flujo principal de despliegue, operación e ingest
 
 ![Arquitectura de despliegue](docs/Infraestructuradespliegue.png)
 
+A continuación se muestra además el flujo específico de consulta live e ingesta programada desde X/Twitter hacia las capas Bronze, Silver y Gold en S3:
+
+![Consulta live e ingesta programada](docs/2infraestructuraingesta-consulta.png)
+
 ```text
 Usuario / Scheduler
       |
