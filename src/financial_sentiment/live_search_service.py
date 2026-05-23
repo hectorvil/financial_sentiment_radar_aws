@@ -320,6 +320,9 @@ def preview_direct_live_search(
 
     run_id = make_run_id("twitter_consultas_live")
 
+    # Build and execute the X queries before any model calls.
+    # At this point the code is still cheap: it only spends X API reads.
+    # Bedrock and FinBERT are invoked later only for candidates that survive ranking.
     payloads, queries, inferred_ticker, inferred_name, warning = _run_x_queries(
         user_query=user_query,
         bearer_token=bearer_token,
@@ -340,6 +343,8 @@ def preview_direct_live_search(
         max_rows=candidate_results,
     )
     raw_df = pd.DataFrame(rows)
+    # Rank candidates locally using public metrics, trusted-source signals,
+    # and financial keywords before asking Bedrock to spend tokens on relevance labels.
     raw_df = add_engagement_ranking(
         raw_df,
         curated_accounts=set(CURATED_MARKET_ACCOUNT_UNIVERSE),
@@ -369,6 +374,8 @@ def preview_direct_live_search(
             warning=warning,
         )
 
+    # Bedrock performs the semantic noise filter after deterministic
+    # query-anchor checks have reduced the candidate set.
     labels = get_relevance_labels(
         rows,
         user_query=user_query,
@@ -400,6 +407,8 @@ def preview_direct_live_search(
             warning=warning,
         )
 
+    # FinBERT runs on original English text or on a short Bedrock translation
+    # for non-English financial text; the original tweet is still preserved.
     processed = process_tweets_with_optional_translation(
         relevant_raw,
         sentiment_model=sentiment_model,

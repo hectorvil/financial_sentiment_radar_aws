@@ -1,3 +1,9 @@
+"""Deterministic Spanish-language financial corrections.
+
+This module corrects obvious cases where an English FinBERT model may struggle,
+such as Spanish tweets about sovereign rating downgrades, Banxico, inflation, or
+Mexican financial risk."""
+
 from __future__ import annotations
 
 import pandas as pd
@@ -74,11 +80,28 @@ MACRO_MEXICO_TERMS = [
 
 
 def _contains_any(text: str, terms: list[str]) -> bool:
+    """Implements the `_contains_any` step used by this module.
+
+    Args:
+        text: Input value consumed by this function.
+        terms: Input value consumed by this function.
+
+    Returns:
+        bool: Result produced by the function.
+    """
     normalized = str(text).lower()
     return any(term in normalized for term in terms)
 
 
 def _safe_text(row: pd.Series) -> str:
+    """Implements the `_safe_text` step used by this module.
+
+    Args:
+        row: Input value consumed by this function.
+
+    Returns:
+        str: Result produced by the function.
+    """
     pieces = []
     for col in ["text", "clean_text", "title", "summary"]:
         if col in row and pd.notna(row[col]):
@@ -87,6 +110,15 @@ def _safe_text(row: pd.Series) -> str:
 
 
 def _confidence_value(value: object, floor: float) -> float:
+    """Implements the `_confidence_value` step used by this module.
+
+    Args:
+        value: Input value consumed by this function.
+        floor: Input value consumed by this function.
+
+    Returns:
+        float: Result produced by the function.
+    """
     try:
         current = float(value or 0)
     except (TypeError, ValueError):

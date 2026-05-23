@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Deploy scheduled live ingestion and Athena/Glue resources.
+#
+# The stack defines the EventBridge Scheduler rule, ECS task definition, IAM roles,
+# logs, Glue database, and tables used by the Twitter live medallion pipeline.
+# Documented by Financial Sentiment Radar documentation patch.
+
 set -euo pipefail
 
 PROJECT_NAME="${PROJECT_NAME:-financial-sentiment-radar}"

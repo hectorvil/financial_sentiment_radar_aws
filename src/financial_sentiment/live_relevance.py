@@ -160,6 +160,14 @@ def _extract_json_array(output_text: str) -> list[dict]:
     raw = str(output_text or "").strip()
 
     def normalize(parsed):
+        """Implements the `normalize` step used by this module.
+
+        Args:
+            parsed: Input value consumed by this function.
+
+        Returns:
+            object: Result produced by the function.
+        """
         if isinstance(parsed, list):
             return [item for item in parsed if isinstance(item, dict)]
 
@@ -176,6 +184,14 @@ def _extract_json_array(output_text: str) -> list[dict]:
         return []
 
     def try_json(candidate: str) -> list[dict]:
+        """Implements the `try_json` step used by this module.
+
+        Args:
+            candidate: Input value consumed by this function.
+
+        Returns:
+            list[dict]: Result produced by the function.
+        """
         candidate = candidate.strip()
         candidate = re.sub(r"^```(?:json)?\s*", "", candidate, flags=re.IGNORECASE)
         candidate = re.sub(r"\s*```$", "", candidate)
@@ -438,6 +454,14 @@ def apply_relevance_labels(df: pd.DataFrame, labels: list[RelevanceLabel]) -> pd
     label_map = {label.tweet_id: label for label in labels}
 
     def _get_label(row: pd.Series) -> RelevanceLabel:
+        """Implements the `_get_label` step used by this module.
+
+        Args:
+            row: Input value consumed by this function.
+
+        Returns:
+            RelevanceLabel: Result produced by the function.
+        """
         tweet_id = str(row.get("tweet_id") or "")
         return label_map.get(
             tweet_id,

@@ -1,3 +1,9 @@
+"""Selective translation layer before FinBERT.
+
+FinBERT works best with English financial text. This module keeps English text
+unchanged, translates non-English financial text through Bedrock when enabled,
+and preserves the original tweet for auditability."""
+
 from __future__ import annotations
 
 import json
@@ -68,10 +74,28 @@ FINANCIAL_HINTS = {
 
 
 def _env_true(name: str) -> bool:
+    """Implements the `_env_true` step used by this module.
+
+    Args:
+        name: Input value consumed by this function.
+
+    Returns:
+        bool: Result produced by the function.
+    """
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "y"}
 
 
+# Translation is intentionally selective. General non-financial text is left
+# untouched so Bedrock is only used when it can improve FinBERT quality.
 def _looks_non_english_financial(text: str) -> bool:
+    """Implements the `_looks_non_english_financial` step used by this module.
+
+    Args:
+        text: Input value consumed by this function.
+
+    Returns:
+        bool: Result produced by the function.
+    """
     normalized = str(text).lower()
     has_spanish_hint = any(term in normalized for term in SPANISH_HINTS)
     has_financial_hint = any(term in normalized for term in FINANCIAL_HINTS)
@@ -80,6 +104,16 @@ def _looks_non_english_financial(text: str) -> bool:
 
 
 def _invoke_claude_translation(client: Any, model_id: str, text: str) -> str:
+    """Implements the `_invoke_claude_translation` step used by this module.
+
+    Args:
+        client: Input value consumed by this function.
+        model_id: Input value consumed by this function.
+        text: Input value consumed by this function.
+
+    Returns:
+        str: Result produced by the function.
+    """
     prompt = f"""
 Translate the following social-media financial text into concise English for a financial sentiment classifier.
 Keep company names, tickers, rating agencies, countries, numbers and credit ratings.
@@ -115,6 +149,16 @@ Text:
 
 
 def _invoke_nova_translation(client: Any, model_id: str, text: str) -> str:
+    """Implements the `_invoke_nova_translation` step used by this module.
+
+    Args:
+        client: Input value consumed by this function.
+        model_id: Input value consumed by this function.
+        text: Input value consumed by this function.
+
+    Returns:
+        str: Result produced by the function.
+    """
     prompt = f"""
 Translate the following social-media financial text into concise English for a financial sentiment classifier.
 Keep company names, tickers, rating agencies, countries, numbers and credit ratings.
@@ -152,6 +196,16 @@ Text:
 
 
 def _translate_text(client: Any, model_id: str, text: str) -> str:
+    """Translates or prepares text for multilingual sentiment scoring.
+
+    Args:
+        client: Input value consumed by this function.
+        model_id: Input value consumed by this function.
+        text: Input value consumed by this function.
+
+    Returns:
+        str: Result produced by the function.
+    """
     if "anthropic.claude" in model_id:
         return _invoke_claude_translation(client, model_id, text)
     if "amazon.nova" in model_id:
@@ -222,6 +276,8 @@ def _prepare_finbert_input(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+# This wrapper preserves the original tweet while giving FinBERT an English
+# financial version when the text appears to be non-English and relevant.
 def process_tweets_with_optional_translation(
     raw_df: pd.DataFrame, *args: Any, **kwargs: Any
 ) -> pd.DataFrame:

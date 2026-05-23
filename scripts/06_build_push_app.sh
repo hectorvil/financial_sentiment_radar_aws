@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Build and push the Streamlit/ECS Docker image.
+#
+# Required environment variables usually come from config/generated.env.
+# The script logs in to ECR, builds the app image, and pushes the tag used by ECS.
+# Documented by Financial Sentiment Radar documentation patch.
+
 set -euo pipefail
 
 source config/generated.env

@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# Create or update a conservative AWS budget for the project.
+#
+# This script helps keep experimentation cost-bounded while using Bedrock, ECS,
+# S3, CloudWatch Logs, and X/Twitter ingestion infrastructure.
+# Documented by Financial Sentiment Radar documentation patch.
+
 set -euo pipefail
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
