@@ -68,6 +68,10 @@ Este proyecto reduce ese ruido usando una arquitectura en capas:
 
 ## Arquitectura funcional
 
+La siguiente figura resume el flujo principal de despliegue, operación e ingesta live del producto sobre AWS:
+
+![Arquitectura de despliegue](docs/Infraestructuradespliegue.png)
+
 ```text
 Usuario / Scheduler
       |
