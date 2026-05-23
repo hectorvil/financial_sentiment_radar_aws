@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Deploy the main Streamlit application service to ECS/Fargate.
+#
+# This script sends CloudFormation parameters such as bucket names, Bedrock flags,
+# task CPU/memory, and image URI. If the image tag is unchanged, ECS may require a
+# forced new deployment to pull the latest image.
+# Documented by Financial Sentiment Radar documentation patch.
+
 set -euo pipefail
 
 source config/generated.env

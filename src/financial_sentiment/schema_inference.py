@@ -483,6 +483,14 @@ Esquema y muestras:
         raise ValueError(f"Bedrock returned an unknown column: {tweet_text_column}")
 
     def optional_column(name: str) -> str | None:
+        """Implements the `optional_column` step used by this module.
+
+        Args:
+            name: Input value consumed by this function.
+
+        Returns:
+            str | None: Result produced by the function.
+        """
         value = parsed.get(name)
         if value in {"", "null", "None", None}:
             return None

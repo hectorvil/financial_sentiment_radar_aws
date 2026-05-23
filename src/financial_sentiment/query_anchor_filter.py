@@ -1,3 +1,10 @@
+"""Strong-anchor extraction and filtering for live financial queries.
+
+The functions in this module prevent the app from answering a precise user
+query with generic market chatter. If a query contains entities such as Moody,
+Google, Banxico, or Baa3, candidates must preserve enough of those anchors to be
+considered."""
+
 from __future__ import annotations
 
 import re
@@ -9,11 +16,20 @@ import pandas as pd
 
 @dataclass(frozen=True)
 class AnchorGroup:
+    """Container for `AnchorGroup` behavior.
+
+    The class groups related state and methods so the surrounding pipeline can
+    keep business logic modular, testable, and easier to reuse.
+    """
+
     name: str
     terms: tuple[str, ...]
     kind: str
 
 
+# Anchor groups define reusable financial entities and themes.
+# They keep the search generic: the same mechanism supports Moody/Mexico,
+# Google/DOJ, Banxico/tasas, and other strong-entity queries.
 ANCHOR_GROUPS: tuple[AnchorGroup, ...] = (
     # Rating agencies / sovereign credit
     AnchorGroup("moody", ("moody", "moodys", "moody's", "moody’s"), "rating_agency"),
@@ -308,12 +324,28 @@ ENTITY_KINDS = {"company", "country", "central_bank", "rating_agency", "rating_c
 
 
 def _strip_accents(text: str) -> str:
+    """Implements the `_strip_accents` step used by this module.
+
+    Args:
+        text: Input value consumed by this function.
+
+    Returns:
+        str: Result produced by the function.
+    """
     return "".join(
         char for char in unicodedata.normalize("NFKD", str(text)) if not unicodedata.combining(char)
     )
 
 
 def _normalize(text: str) -> str:
+    """Implements the `_normalize` step used by this module.
+
+    Args:
+        text: Input value consumed by this function.
+
+    Returns:
+        str: Result produced by the function.
+    """
     text = _strip_accents(str(text).lower())
     text = text.replace("+", " ")
     text = text.replace("’", "'")
@@ -322,10 +354,28 @@ def _normalize(text: str) -> str:
 
 
 def _tokens(text: str) -> set[str]:
+    """Implements the `_tokens` step used by this module.
+
+    Args:
+        text: Input value consumed by this function.
+
+    Returns:
+        set[str]: Result produced by the function.
+    """
     return set(re.findall(r"[a-z0-9$]+", _normalize(text)))
 
 
 def _term_matches_text(term: str, normalized_text: str, token_set: set[str]) -> bool:
+    """Implements the `_term_matches_text` step used by this module.
+
+    Args:
+        term: Input value consumed by this function.
+        normalized_text: Input value consumed by this function.
+        token_set: Input value consumed by this function.
+
+    Returns:
+        bool: Result produced by the function.
+    """
     term_norm = _normalize(term)
 
     if not term_norm:
@@ -342,6 +392,14 @@ def _term_matches_text(term: str, normalized_text: str, token_set: set[str]) -> 
 
 
 def _matched_groups(text: str) -> list[AnchorGroup]:
+    """Implements the `_matched_groups` step used by this module.
+
+    Args:
+        text: Input value consumed by this function.
+
+    Returns:
+        list[AnchorGroup]: Result produced by the function.
+    """
     normalized = _normalize(text)
     token_set = _tokens(text)
     matches: list[AnchorGroup] = []
@@ -385,6 +443,15 @@ def _required_group_count(groups: list[AnchorGroup]) -> int:
 
 
 def _row_match_count(text: str, query_groups: list[AnchorGroup]) -> int:
+    """Implements the `_row_match_count` step used by this module.
+
+    Args:
+        text: Input value consumed by this function.
+        query_groups: Input value consumed by this function.
+
+    Returns:
+        int: Result produced by the function.
+    """
     normalized = _normalize(text)
     token_set = _tokens(text)
     count = 0
@@ -439,6 +506,14 @@ def filter_candidates_by_query_anchors(
 
 
 def _quote_x_term(term: str) -> str:
+    """Implements the `_quote_x_term` step used by this module.
+
+    Args:
+        term: Input value consumed by this function.
+
+    Returns:
+        str: Result produced by the function.
+    """
     term = str(term).strip()
     if not term:
         return ""
@@ -460,6 +535,8 @@ def _group_query_terms(group: AnchorGroup, *, max_terms: int = 6) -> list[str]:
     return terms
 
 
+# Precise anchor queries reduce cost by narrowing X search before the app
+# spends Bedrock tokens or FinBERT inference time.
 def build_precise_anchor_query(user_query: str, *, language: str = "auto") -> str | None:
     """Build a precise, low-cost X query from strong user-query anchors.
 

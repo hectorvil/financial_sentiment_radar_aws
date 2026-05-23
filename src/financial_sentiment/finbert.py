@@ -63,6 +63,17 @@ class FinBertClassifier:
         model: Any | None = None,
         torch_module: Any | None = None,
     ) -> None:
+        """Implements the `__init__` step used by this module.
+
+        Args:
+            model_name: Input value consumed by this function.
+            tokenizer: Input value consumed by this function.
+            model: Input value consumed by this function.
+            torch_module: Input value consumed by this function.
+
+        Returns:
+            None: Result produced by the function.
+        """
         self.model_name = model_name
 
         if tokenizer is None or model is None or torch_module is None:

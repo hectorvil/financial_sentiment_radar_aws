@@ -1,3 +1,9 @@
+"""Local ranking for live X/Twitter search candidates.
+
+The ranking layer combines public engagement metrics, trusted-source bonuses,
+financial-keyword signals, and noise penalties. It is used after X returns
+candidates and before Bedrock/FinBERT spend additional compute."""
+
 from __future__ import annotations
 
 import math
@@ -116,12 +122,30 @@ def candidate_pool_size(requested: int) -> int:
 
 
 def _num(df: pd.DataFrame, col: str) -> pd.Series:
+    """Implements the `_num` step used by this module.
+
+    Args:
+        df: Input value consumed by this function.
+        col: Input value consumed by this function.
+
+    Returns:
+        pd.Series: Result produced by the function.
+    """
     if col not in df.columns:
         return pd.Series(0, index=df.index)
     return pd.to_numeric(df[col], errors="coerce").fillna(0)
 
 
 def _contains_any(text: str, terms: set[str]) -> bool:
+    """Implements the `_contains_any` step used by this module.
+
+    Args:
+        text: Input value consumed by this function.
+        terms: Input value consumed by this function.
+
+    Returns:
+        bool: Result produced by the function.
+    """
     lower = str(text).lower()
     return any(term in lower for term in terms)
 
